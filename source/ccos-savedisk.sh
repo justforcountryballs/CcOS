@@ -62,6 +62,10 @@ try_once() {
             iso9660) blkid "$p" | grep -q 'LABEL="CCOS"' && return 2; continue ;;
             *) continue ;;
         esac
+        # mounted somewhere else already (e.g. as a USB drive under /media)? Linux
+        # won't mount it a second time with other settings: take it back first
+        grep -q "^$p " /proc/mounts && { grep "^$p " /proc/mounts | grep -q " /mnt/usb " || umount -l "$p" 2>/dev/null; }
+        mountpoint -q /mnt/usb && umount /mnt/usb 2>/dev/null
         mount -t "$t" -o ro "$p" /mnt/usb 2>/dev/null || continue
         if [ -f /mnt/usb/ccos/ccos.txt ]; then
             mount -o remount,rw /mnt/usb 2>/dev/null || { umount /mnt/usb; return 1; }

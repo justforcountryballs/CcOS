@@ -144,7 +144,9 @@ static CURL *web(const char *url) {
 static const char *web_err(CURLcode r, CURL *c) {
     long code = 0; curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
     if (code == 404) return "No ccos release was found on GitHub yet";
-    if (code == 403) return "GitHub said 'too many requests' - try again in an hour";
+    if (code == 403 || code == 429) return "GitHub said 'too many requests' - try again in an hour";
+    if (code >= 500) return "GitHub is having trouble right now - try again later";
+    if (code >= 400) { static char m[80]; snprintf(m, sizeof m, "GitHub answered with error %ld", code); return m; }
     if (r == CURLE_COULDNT_RESOLVE_HOST || r == CURLE_COULDNT_CONNECT) return "No internet connection";
     if (r == CURLE_OPERATION_TIMEDOUT) return "The connection is too slow or stopped";
     if (r == CURLE_WRITE_ERROR) return "Not enough room for the download";

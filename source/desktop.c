@@ -5345,8 +5345,12 @@ static void drives_poll(void) {
             ours = 1;
             /* a ccos stick while the save disk isn't found yet: leave it for ccos-savedisk (10 s) */
             char ct[200]; snprintf(ct, sizeof ct, "%s/ccos/ccos.txt", mnt);
-            static int waited;
-            if (!conf_persistent && access(ct, F_OK) == 0 && waited++ < 5) { umount2(mnt, MNT_DETACH); rmdir(mnt); continue; }
+            /* the stick ccos started from: never ours to mount, or ccos-savedisk can't use it
+               (Linux won't mount it twice). It keeps looking and takes it as soon as it can. */
+            static int live = -1;
+            if (live < 0) { FILE *cf = fopen("/proc/cmdline", "r"); char cl[1024] = "";
+                            if (cf) { if (!fgets(cl, sizeof cl, cf)) cl[0] = 0; fclose(cf); } live = strstr(cl, "ccos.live") != NULL; }
+            if (!conf_persistent && access(ct, F_OK) == 0 && live) { umount2(mnt, MNT_DETACH); rmdir(mnt); continue; }
         }
         int i = nrd++;
         snprintf(rdrv[i].dev, sizeof rdrv[i].dev, "%s", now[k]);

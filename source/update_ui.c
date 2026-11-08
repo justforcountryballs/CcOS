@@ -195,14 +195,17 @@ static void up_status(char *s, size_t n) {
 }
 static void update_draw(int cx, int cy, int cw, uint32_t text, uint32_t grey) {
     int y = cy + ST_Y;
-    if (up.stick < 0) up.stick = access("/mnt/usb/ccos/ccos.txt", F_OK) == 0;
+    up.stick = access("/mnt/usb/ccos/ccos.txt", F_OK) == 0;        /* the stick can be found late */
+    int live = 0; { FILE *cf = fopen("/proc/cmdline", "r"); char cl[1024] = "";
+                    if (cf) { if (!fgets(cl, sizeof cl, cf)) cl[0] = 0; fclose(cf); } live = strstr(cl, "ccos.live") != NULL; }
     if (!up.cur[0]) { FILE *f = fopen("/etc/ccos-version", "r"); if (f) { if (fgets(up.cur, sizeof up.cur, f)) up.cur[strcspn(up.cur, "\r\n")] = 0; fclose(f); } }
     st_heading(cx, y + 20, "ccos updates");
     char b[200];
     snprintf(b, sizeof b, "You have ccos %s", up.cur[0] ? up.cur : "?");
     draw_text(cx + 24, y + 50, b, text, 255);
     draw_text(cx + 24, y + 68, up.stick ? "Updates install on this USB stick. Your files, settings and apps stay."
-                                        : "Running in QEMU: updates come as a new ccos.zip to download.", grey, 255);
+                             : live ? "Started from a USB stick, but ccos can't reach the stick right now."
+                                    : "Running in QEMU: updates come as a new ccos.zip to download.", grey, 255);
     int bx = cx + 24, by = y + UP_BTN_Y, hid = hot.type == HOT_CONTENT && wins[hot.a].draw == settings_draw ? hot.b : -1;
     (void)hid;
     int busy = up_alive() || up.state == UP_WORKING;
