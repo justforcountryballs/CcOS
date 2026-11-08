@@ -96,8 +96,9 @@ if grep -q 'ccos.live' /proc/cmdline; then
 else
     progress 45 "Mounting save disk"
 fi
-if ! /sbin/ccos-savedisk && grep -q 'ccos.live' /proc/cmdline; then
-    /sbin/ccos-savedisk --watch &       # not found yet: keep looking in the background
+/sbin/ccos-savedisk
+if grep -q 'ccos.live' /proc/cmdline; then
+    /sbin/ccos-savedisk --watch &       # not found yet, or pulled out later: keep looking
 fi
 usleep 300000
 
