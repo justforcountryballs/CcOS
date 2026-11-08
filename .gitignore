@@ -1,0 +1,9 @@
+# the release signing key must never be in the repository
+*.key
+keys/
+# build output
+*.img
+*.img.gz
+*.ccupd
+*.zip
+*.o
