@@ -1,0 +1,66 @@
+ccos is built from these open-source projects:
+
+  Linux kernel 6.12     GPL-2.0          https://kernel.org
+                        (includes Intel's iwlwifi Wi-Fi driver)
+  BusyBox 1.36.1        GPL-2.0          https://busybox.net
+  wpa_supplicant 2.10   BSD-3-Clause     https://w1.fi  (Wi-Fi security, from Ubuntu's package)
+  libnl 3               LGPL-2.1         (used by wpa_supplicant)
+  OpenSSL 3             Apache-2.0       (used by wpa_supplicant)
+  GNU C library and friends  LGPL        (shared libraries wpa_supplicant needs)
+  foot 1.16              MIT              https://codeberg.org/dnkl/foot  (the Terminal)
+  Wayland 1.22, wayland-protocols, libxkbcommon, xkeyboard-config, fontconfig,
+  fcft, pixman, utf8proc, HarfBuzz   MIT-style licences (Ubuntu packages)
+  FreeType, libpng, libjpeg-turbo, expat, zlib, GnuTLS and other libraries,
+  as packaged by Ubuntu (free licences: FreeType FTL/GPL, libpng, IJG/BSD, MIT,
+  zlib, LGPL)
+  font8x16              from the Linux kernel (GPL-2.0)
+  DejaVu fonts          Bitstream Vera / DejaVu licence (free, see DejaVu-LICENSE.txt)
+                        (the Smooth font option)
+  CA certificates       Mozilla's trusted root list (MPL-2.0), via Ubuntu
+  Intel Wi-Fi firmware  iwlwifi-so-a0-jf-b0-77 (Intel Wireless-AC 9560),
+                        redistributable, see /lib/firmware/LICENCE.iwlwifi_firmware
+  Intel graphics firmware  i915 GuC/HuC/DMC for Alder Lake (redistributable, linux-firmware)
+  Realtek network firmware  rtl_nic files from linux-firmware (redistributable)
+  Flatpak 1.14           LGPL-2.1+        https://flatpak.org  (installs and runs apps from Flathub)
+  bubblewrap, xdg-dbus-proxy  LGPL-2.0+  (Flatpak's app sandbox)
+  D-Bus 1.14            AFL-2.1 / GPL-2.0  https://dbus.freedesktop.org  (apps talk to the system)
+  GnuPG 2.4             GPL-3.0          https://gnupg.org  (checks Flathub's signatures)
+  e2fsprogs 1.47        GPL-2.0          (formats and checks the apps disk)
+  OSTree, libarchive, GLib, json-glib, polkit, curl and the other libraries
+  Flatpak needs, as packaged by Ubuntu 24.04 (LGPL / free licences)
+  PulseAudio 16.1        LGPL-2.1+        https://www.freedesktop.org/wiki/Software/PulseAudio/  (sound for apps)
+  alsa-lib config files   LGPL-2.1+        (sound card descriptions PulseAudio reads)
+  Xwayland 23.2           MIT/X11          https://x.org  (runs X11 apps and games)
+  xkbcomp                 MIT/X11          (keyboard layouts for Xwayland)
+  stb_image               public domain / MIT  https://github.com/nothings/stb  (PNG app icons)
+  nanosvg                 zlib             https://github.com/memononen/nanosvg  (SVG app icons)
+  zlib 1.3                zlib             https://zlib.net  (zip files in File Explorer)
+  libsodium 1.0.18        ISC              https://libsodium.org  (checks update signatures)
+  libcurl 8.5 (GnuTLS)    curl (MIT-style) https://curl.se  (downloads updates)
+  FFmpeg 6.1              GPL-2.0+ (Ubuntu's build)  https://ffmpeg.org  (Videos and Music)
+                          with dav1d, libvpx, opus, vorbis, libmp3lame, openmpt and the other
+                          decoder libraries Ubuntu's FFmpeg uses (BSD / LGPL / MIT licences)
+  libpulse-simple         LGPL-2.1+        (sound output for Videos and Music)
+  xdg-desktop-portal 1.18, xdg-desktop-portal-gtk 1.15  LGPL-2.1+  (file windows, links and
+                          notifications for Flathub apps)
+  GTK 3.24, Pango, ATK, cairo, PipeWire client library and their libraries  LGPL-2.1+ (Ubuntu)
+                          (used by the file window)
+  Adwaita icon theme      CC-BY-SA-3.0 / LGPL-3.0  (GNOME; drawn as small PNGs for the file window)
+  shared-mime-info        GPL-2.0+          (file type database)
+  GSettings schemas from GTK, gsettings-desktop-schemas  LGPL-2.1+
+  libfuse 3 / fusermount3 LGPL-2.1 / GPL-2.0  (the document portal: files picked for apps)
+  BlueZ 5.72              GPL-2.0+ / LGPL-2.1+  http://www.bluez.org  (Bluetooth: bluetoothd, bluetoothctl)
+  PulseAudio Bluetooth modules, SBC (libsbc)  LGPL-2.1+  (Bluetooth headphones)
+  GStreamer 1.24 core libraries, elfutils libdw/libelf, libunwind  LGPL / LGPL / MIT
+                          (needed by the PulseAudio Bluetooth modules)
+  Intel Bluetooth firmware  ibt-11/12/17/18 files from linux-firmware (redistributable)
+  tz database (zoneinfo) 2024  public domain  https://www.iana.org/time-zones
+                          (time zones; ccos asks ip-api.com for the automatic time zone
+                          and pool.ntp.org for the time)
+  GNU GRUB 2.12         GPL-3.0          https://www.gnu.org/software/grub  (starts ccos from the USB stick)
+  wireless-regdb        ISC              (which Wi-Fi channels are allowed per country)
+
+Everything else (the desktop, apps, splash and sounds) was written for ccos.
+
+The Ubuntu packages are unmodified Ubuntu 24.04 packages; their full source code
+is available from Ubuntu (for example: apt-get source pulseaudio xwayland).
