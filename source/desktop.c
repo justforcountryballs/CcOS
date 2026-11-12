@@ -133,6 +133,8 @@ static const Wallpaper wallpapers[] = {
 
 /* ---- settings (saved to /data/ccos.conf) ---------------------------- */
 #define CONF_PATH "/data/ccos.conf"
+static int stick_wait;              /* the "needs to find your USB boot stick" screen is up */
+static void stick_wait_click(void);
 static int set_wall = 0;      /* index into wallpapers[] */
 static int set_clock24 = 1;   /* 1 = 24-hour (military) time */
 static int set_sound = 1;     /* play the startup sound */
@@ -147,7 +149,7 @@ static int set_wifi = 1;      /* Wi-Fi radio on */
 static int set_smooth = 0;    /* smooth (anti-aliased) font: on in the Modern style */
 static int set_style = 0;     /* 0 Classic (glass, blocky font), 1 Modern (flat, smooth) */
 static int set_dark = 0;      /* Modern: 0 light, 1 dark */
-static int set_cursor_col = 0;   /* mouse pointer colour: 0 white, 1 black, 2 blue */
+static int set_cursor_col = 1;   /* mouse pointer colour: 0 white, 1 black, 2 blue */
 static int set_cursor_size = 0;  /* mouse pointer size: 0 normal, 1 large, 2 extra large */
 static char set_tz[64];          /* time zone, like "Europe/Warsaw" ("": UTC) */
 static int set_tz_auto = 1;      /* find the time zone from the internet connection */
@@ -1095,7 +1097,7 @@ static void load_settings(void) {
         if (sscanf(line, "wifi=%d", &v) == 1) set_wifi = !!v;
         if (sscanf(line, "style=%d", &v) == 1) set_style = set_smooth = !!v;
         if (sscanf(line, "dark=%d", &v) == 1) set_dark = !!v;
-        if (sscanf(line, "cursor=%d", &v) == 1 && v >= 0 && v < 3) set_cursor_col = v;
+        if (sscanf(line, "cursor2=%d", &v) == 1 && v >= 0 && v < 3) set_cursor_col = v;   /* (the old "cursor=" was the old pointer: black is the new look) */
         if (sscanf(line, "cursorsize=%d", &v) == 1 && v >= 0 && v < 3) set_cursor_size = v;
         if (sscanf(line, "tpspeed=%d", &v) == 1 && v >= 0 && v < 3) set_tp_speed = v;
         if (sscanf(line, "bright=%d", &v) == 1 && v >= 5 && v <= 100) set_bright = v;
@@ -1149,14 +1151,19 @@ static void load_settings(void) {
     fclose(f);
 }
 
+static void stick_late_check(void);
 static void save_settings(void) {
+    if (!conf_persistent) {                       /* the stick turned up: load its settings, don't overwrite them */
+        struct stat a, b;
+        if (stat("/data", &a) == 0 && stat("/", &b) == 0 && a.st_dev != b.st_dev) { stick_late_check(); return; }
+    }
     mkdir("/data", 0755);
     FILE *f = fopen(CONF_PATH ".tmp", "w");
     if (!f) return;
     fprintf(f, "wallpaper=%d\nclock24=%d\nsound=%d\nnet=%d\nwifi=%d\nfont=%d\n", set_wall, set_clock24, set_sound, set_net, set_wifi, set_smooth);
     fprintf(f, "volume=%d\nmuted=%d\nstyle=%d\ndark=%d\n", set_volume, set_muted, set_style, set_dark);
     fprintf(f, "wallimg=%s\nwallfit=%d\n", set_wall_img, set_wall_fit);
-    fprintf(f, "cursor=%d\ncursorsize=%d\ntpspeed=%d\n", set_cursor_col, set_cursor_size, set_tp_speed);
+    fprintf(f, "cursor2=%d\ncursorsize=%d\ntpspeed=%d\n", set_cursor_col, set_cursor_size, set_tp_speed);
     fprintf(f, "bright=%d\nscreenoff=%d\nsleepafter=%d\nlid=%d\n", set_bright, set_off_idx, set_sleep_idx, set_lid);
     fprintf(f, "notifysound=%d\ngpu=%d\nkbd=%d\n", set_notify_sound, set_gpu, set_kbd);
     fprintf(f, "tz=%s\ntzauto=%d\nntp=%d\nrtclocal=%d\n", set_tz, set_tz_auto, set_ntp, set_rtc_local);
@@ -2591,7 +2598,8 @@ static void draw_window(int idx) {
  * =================================================================== */
 enum { CUR_ARROW, CUR_EW, CUR_NS, CUR_NWSE, CUR_NESW };
 static const float cursor_scales[3] = { 1.0f, 1.5f, 2.0f };
-static const float arrow_pts[] = { 0, 0, 0, 17, 4, 13.2f, 7.2f, 19.6f, 9.8f, 18.5f, 6.8f, 12.2f, 12, 12.2f };
+/* a plain arrowhead: tip, right corner, notch, bottom of the left edge */
+static const float arrow_pts[] = { 0.5f, 0.5f, 16.5f, 16.6f, 9.4f, 17.0f, 0.5f, 23.4f };
 static const float dbl_pts[] = { -11, 0, -5.5f, -5.5f, -5.5f, -2.1f, 5.5f, -2.1f, 5.5f, -5.5f, 11, 0,
                                  5.5f, 5.5f, 5.5f, 2.1f, -5.5f, 2.1f, -5.5f, 5.5f };
 
@@ -2603,7 +2611,7 @@ static void cursor_colors(int col, uint32_t *fill, uint32_t *edge) {
 /* the area (around the hot spot) any pointer of size s can cover */
 static void cursor_box(float s, int *x0, int *y0, int *x1, int *y1) {
     *x0 = (int)floorf(-12 * s) - 2; *y0 = (int)floorf(-12 * s) - 2;
-    *x1 = (int)ceilf(14 * s) + 3;   *y1 = (int)ceilf(21 * s) + 3;
+    *x1 = (int)ceilf(20 * s) + 4;   *y1 = (int)ceilf(27 * s) + 4;
 }
 /* distance from a point to the outline of a polygon: below 0 = inside */
 static float poly_sd(const float *p, int n, float px, float py) {
@@ -2623,7 +2631,7 @@ static float poly_sd(const float *p, int n, float px, float py) {
 static void render_cursor(int shape, int col, float s, int hx, int hy, void (*put)(int, int, uint32_t, int)) {
     uint32_t fill, edge; cursor_colors(col, &fill, &edge);
     const float *pts = shape == CUR_ARROW ? arrow_pts : dbl_pts;
-    int n = shape == CUR_ARROW ? 7 : 10;
+    int n = shape == CUR_ARROW ? 4 : 10;
     float ang = shape == CUR_NS ? 1.5707963f : shape == CUR_NWSE ? 0.7853982f : shape == CUR_NESW ? -0.7853982f : 0;
     float ca = cosf(ang), sa = sinf(ang), o = s > 1.2f ? 1.1f * s : 1.0f;     /* outline width */
     int x0, y0, x1, y1; cursor_box(s, &x0, &y0, &x1, &y1);
@@ -2631,9 +2639,17 @@ static void render_cursor(int shape, int col, float s, int hx, int hy, void (*pu
         for (int x = x0; x < x1; x++) {
             float px = (x + 0.5f) / s, py = (y + 0.5f) / s;
             if (shape != CUR_ARROW) { float rx = px * ca + py * sa, ry = -px * sa + py * ca; px = rx; py = ry; }
-            float d = poly_sd(pts, n, px, py) * s;                     /* in screen pixels */
+            float d = poly_sd(pts, n, px, py) * s - 0.6f;              /* in screen pixels (corners a bit round) */
             float outer = clampf(0.5f - d, 0, 1);
-            if (outer <= 0) continue;
+            if (outer <= 0) {
+                if (shape == CUR_ARROW) {                                /* a soft shadow, down and right */
+                    float sx = (x - 1.0f * s + 0.5f) / s, sy = (y - 1.6f * s + 0.5f) / s;
+                    float sd = poly_sd(pts, n, sx, sy) * s;
+                    float sh = clampf(1.0f - sd / (2.2f * s), 0, 1);
+                    if (sh > 0) put(hx + x, hy + y, RGB(0, 0, 0), (int)(80 * sh * sh));
+                }
+                continue;
+            }
             float in = clampf(-d - o + 0.5f, 0, 1);
             put(hx + x, hy + y, mix(edge, fill, in), (int)(255 * outer));
         }
@@ -6987,6 +7003,7 @@ static int win_under_mouse(void) {
 }
 
 static void rpress(void) {                            /* right mouse button */
+    if (stick_wait) return;
     if (wl_popup_button(0x111, 1)) { wl_popup_button(0x111, 0); return; }   /* a Wayland app's menu */
     if (pop.open) { pop_close(); return; }
     update_hover();
@@ -7022,6 +7039,7 @@ static void rpress(void) {                            /* right mouse button */
 }
 
 static void wheel(int amount) {
+    if (stick_wait) return;
     int i = win_under_mouse();
     if (i >= 0 && wins[i].wheel) wins[i].wheel(amount);
 }
@@ -7033,6 +7051,7 @@ static void on_signal(int s) { (void)s; restore_console(); _exit(0); }
  * (two-finger tap = right click). Pressing the pad clicks; pressing in the
  * bottom-right corner, or with two fingers down, is a right click. */
 static void left_button(int down) {
+    if (stick_wait) { if (down) stick_wait_click(); return; }
     if ((down ? !mouse_down : 1) && wl_popup_button(0x110 /* BTN_LEFT */, down)) {   /* a Wayland app's menu */
         if (!down) { drag_win = -1; content_drag = -1; rz_win = -1; }
         mouse_down = down; return;
@@ -7130,6 +7149,7 @@ static int touchpad_event(int d, const struct input_event *v) {
     return 1;
 }
 
+#include "stickwait.c"            /* waiting for the USB boot stick before loading settings */
 int main(void) {
     int fb = open("/dev/fb0", O_RDWR);
     if (fb < 0) { perror("desktop: /dev/fb0"); return 1; }
@@ -7169,9 +7189,11 @@ int main(void) {
         sigaction(SIGCHLD, &sa, NULL);
     }
 
+    font_init();
+    scan_devices();                               /* the mouse, for the stick screen */
+    stick_wait_screen();                          /* settings are on the stick: wait for it */
     check_persistent();
     fp_scan();                                    /* Flatpak apps (pins may point at them) */
-    font_init();
     load_settings();
     tz_init();
     power_init();
@@ -7447,6 +7469,7 @@ int main(void) {
             power_tick();
             tz_tick();
             print_job_poll();
+            stick_late_check();
             update_poll();
             fileop_poll();
             static int drv_tick;

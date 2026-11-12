@@ -285,6 +285,14 @@ Apps from Flathub (Flatpak):
   USB drives on the left. Links from apps open in Firefox. Notifications
   from apps appear as ccos notifications.
 
+Starting from the USB stick:
+  Your files and settings are on the stick. If ccos can't find the stick
+  right after starting (some laptops find USB sticks a few seconds late), it
+  shows "CcOS needs to find your USB boot stick." Unplug the stick and plug
+  it back in; when it says "USB boot stick found!", the desktop opens with
+  your settings. "Skip" (or Esc) opens the desktop straight away; if the
+  stick turns up later, your settings are loaded then.
+
 Updates (Settings > Update):
   New ccos versions are published on github.com/justforcountryballs/CcOS
   (Releases). ccos looks once a day and shows a notification when there's

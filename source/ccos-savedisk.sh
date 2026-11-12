@@ -12,7 +12,7 @@
 # looked at read-only; only the stick with ccos/ccos.txt on it is written to.
 #   --watch  keep looking in the background (for a stick that shows up late
 #            or is plugged in again after boot)
-mountpoint -q /data && exit 0
+[ "$1" = --watch ] || { mountpoint -q /data && exit 0; }
 mkdir -p /data /mnt/usb
 
 if [ -b /dev/vda ]; then
@@ -87,22 +87,39 @@ try_once() {
     return 1
 }
 
+# is the stick behind /data gone (pulled out, or it dropped off USB)? Then the
+# mounts are dead: let go of them so the stick can be used again when it's back
+stale() {
+    d=$(awk '$2=="/mnt/store" || $2=="/data" {print $1; exit}' /proc/mounts)
+    case "$d" in
+        /dev/sd*) [ -e "/sys/class/block/${d#/dev/}" ] && return 1; return 0 ;;
+        /dev/loop*) [ -f /mnt/usb/ccos/ccos.txt ] && return 1; return 0 ;;
+    esac
+    return 1
+}
+let_go() {
+    for m in /apps /data /mnt/store /mnt/usb; do umount -l "$m" 2>/dev/null; done
+    echo "ccos: the USB stick went away; waiting for it to come back" > /dev/kmsg
+}
+found_again() {
+    # restart Wi-Fi so it knows the networks saved on the stick
+    pidof wpa_supplicant >/dev/null && /sbin/ccos-network --wifi-again
+    mountpoint -q /apps && /sbin/ccos-apps            # installed apps are there too
+    echo "ccos: using the USB stick again" > /dev/kmsg
+}
+
 if [ "$1" = --watch ]; then
-    # for 10 minutes: if the stick appears (e.g. plugged in again), start saving
-    n=0
-    while [ $n -lt 300 ]; do
-        mountpoint -q /data && exit 0
-        try_once; r=$?
-        if [ $r = 0 ]; then
-            # restart Wi-Fi so it knows the networks saved on the stick
-            pidof wpa_supplicant >/dev/null && /sbin/ccos-network --wifi-again
-            mountpoint -q /apps && /sbin/ccos-apps            # installed apps are there too
-            exit 0
+    # for as long as ccos runs (from the stick): if the stick is missing - not
+    # found yet at boot, or pulled out and plugged in again - take it back
+    while true; do
+        if mountpoint -q /data; then
+            if stale; then let_go; else sleep 2; continue; fi
         fi
+        try_once; r=$?
+        [ $r = 0 ] && { found_again; continue; }
         [ $r = 2 ] && exit 1
-        sleep 2; n=$((n + 1))
+        sleep 2
     done
-    exit 1
 fi
 
 # at boot: wait about 3 seconds at most. If the stick is slower than that

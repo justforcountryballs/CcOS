@@ -98,6 +98,21 @@ static void update_started(void);
 /* once a second */
 static void update_poll(void) {
     static time_t boot; if (!boot) boot = time(NULL);
+    {   /* the stick dropping off USB (or pulled out) and coming back: say so */
+        static int was = -1, live = -1, gone;
+        if (live < 0) { FILE *cf = fopen("/proc/cmdline", "r"); char cl[1024] = "";
+                        if (cf) { if (!fgets(cl, sizeof cl, cf)) cl[0] = 0; fclose(cf); } live = strstr(cl, "ccos.live") != NULL; }
+        check_persistent();
+        if (live && was == 1 && !conf_persistent) {
+            gone = 1;
+            toast(ICON_USB, "The ccos USB stick went away",
+                  "Plug it back in and your files and apps come back.");
+        } else if (live && gone && conf_persistent) {
+            gone = 0;
+            toast(ICON_USB, "The ccos USB stick is back", "Your files and apps are there again.");
+        }
+        was = conf_persistent;
+    }
     static int confirm_done;                     /* tell the stick this version works (once it's found) */
     if (!confirm_done && !up_alive() && time(NULL) - boot >= 5) {
         if (access("/mnt/usb/ccos/ccos.txt", F_OK) == 0) { confirm_done = 1; update_started(); return; }
