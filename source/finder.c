@@ -248,6 +248,8 @@ static void finder_elem_rect(int id, int *x, int *y, int *w, int *h) {
 static void fd_open(int i) {
     if (i < 0 || i >= fd.n) return;
     char p[300]; snprintf(p, sizeof p, "%s", fd.it[i].path);
+    int me = win_of(finder_draw);
+    if (me >= 0) { fd.q[0] = 0; close_win(me); }               /* the Finder goes away, like a launcher */
     if (fd.it[i].app) run(p); else open_file(p);
 }
 static void fd_set_tab(int t) { if (t != fd.tab) { fd.tab = t; fd.scroll = 0; fd_build(); } repaint_client(finder_draw); }

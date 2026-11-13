@@ -1291,9 +1291,12 @@ static void decom_bind(struct wl_client *c, void *d, uint32_t v, uint32_t id) {
 /* ======================================================================
  *  CLIPBOARD (wl_data_device_manager): copy in one app, paste in another
  * ====================================================================== */
+static void ch_fetch(struct wl_resource *src, const char *mime, int png);
+static void ch_put(int png, const char *data, size_t n);
 typedef struct { struct wl_resource *res; char mime[16][64]; int n; } wsrc;
 static wsrc *wl_sel;                          /* what was copied last */
-static unsigned char *own_clip; static size_t own_clip_n; static int own_clip_on;   /* ccos's own: a screenshot */
+static unsigned char *own_clip; static size_t own_clip_n; static int own_clip_on, own_clip_text;   /* ccos's own: a screenshot, or text copied in a ccos app */
+static int text_mime(const char *m) { return !strcmp(m, "text/plain;charset=utf-8") || !strcmp(m, "text/plain") || !strcmp(m, "UTF8_STRING") || !strcmp(m, "TEXT") || !strcmp(m, "STRING"); }
 static struct wl_list wl_devices;             /* wl_data_device resources */
 
 static void src_offer(struct wl_client *c, struct wl_resource *r, const char *mime) {
@@ -1314,7 +1317,7 @@ static void offer_accept(struct wl_client *c, struct wl_resource *r, uint32_t se
 static void offer_receive(struct wl_client *c, struct wl_resource *r, const char *mime, int32_t fd) {
     (void)c; (void)r;
     if (wl_sel) wl_data_source_send_send(wl_sel->res, mime, fd);   /* the copying app writes it straight in */
-    else if (own_clip_on && own_clip && !strcmp(mime, "image/png") && fork() == 0) {   /* ours: written by a helper */
+    else if (own_clip_on && own_clip && (own_clip_text ? text_mime(mime) : !strcmp(mime, "image/png")) && fork() == 0) {   /* ours: written by a helper */
         size_t off = 0;
         while (off < own_clip_n) { ssize_t k = write(fd, own_clip + off, own_clip_n - off); if (k <= 0) break; off += (size_t)k; }
         _exit(0);
@@ -1337,7 +1340,10 @@ static void wl_send_selection(struct wl_client *to) {
         wl_resource_set_implementation(o, &offer_impl, NULL, NULL);
         wl_data_device_send_data_offer(d, o);
         if (wl_sel) for (int i = 0; i < wl_sel->n; i++) wl_data_offer_send_offer(o, wl_sel->mime[i]);
-        else wl_data_offer_send_offer(o, "image/png");
+        else if (own_clip_text) {
+            static const char *tm[] = { "text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "TEXT", "STRING" };
+            for (int i = 0; i < 5; i++) wl_data_offer_send_offer(o, tm[i]);
+        } else wl_data_offer_send_offer(o, "image/png");
         wl_data_device_send_selection(d, o);
     }
 }
@@ -1347,7 +1353,17 @@ static void wl_clip_set_png(const unsigned char *png, size_t n) {
     unsigned char *c = malloc(n);
     if (!c) return;
     memcpy(c, png, n);
-    free(own_clip); own_clip = c; own_clip_n = n; own_clip_on = 1;
+    free(own_clip); own_clip = c; own_clip_n = n; own_clip_on = 1; own_clip_text = 0;
+    if (wl_sel) { wl_data_source_send_cancelled(wl_sel->res); wl_sel = NULL; }
+    if (kb_focus) wl_send_selection(wl_resource_get_client(kb_focus->res));
+    ch_put(1, (const char *)png, n);
+}
+/* text copied in a ccos app: Wayland apps can paste it too */
+static void wl_clip_set_text(const char *s, size_t n) {
+    unsigned char *c = malloc(n + 1);
+    if (!c) return;
+    memcpy(c, s, n); c[n] = 0;
+    free(own_clip); own_clip = c; own_clip_n = n; own_clip_on = 1; own_clip_text = 1;
     if (wl_sel) { wl_data_source_send_cancelled(wl_sel->res); wl_sel = NULL; }
     if (kb_focus) wl_send_selection(wl_resource_get_client(kb_focus->res));
 }
@@ -1362,6 +1378,12 @@ static void dev_set_selection(struct wl_client *c, struct wl_resource *r, struct
     wl_sel = s;
     own_clip_on = 0;
     if (kb_focus) wl_send_selection(wl_resource_get_client(kb_focus->res));
+    if (s) {                                         /* keep a copy for the clipboard history (and ccos's apps) */
+        static const char *tm[] = { "text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING" };
+        int done = 0;
+        for (int k = 0; k < 5 && !done; k++) for (int i = 0; i < s->n; i++) if (!strcmp(s->mime[i], tm[k])) { ch_fetch(s->res, tm[k], 0); done = 1; break; }
+        for (int i = 0; i < s->n && !done; i++) if (!strcmp(s->mime[i], "image/png")) { ch_fetch(s->res, "image/png", 1); done = 1; }
+    }
 }
 static const struct wl_data_device_interface dev_impl = {
     .start_drag = dev_start_drag, .set_selection = dev_set_selection, .release = res_destroy,

@@ -110,6 +110,15 @@ Desktop controls:
   Windows + Shift + S                drag a box around part of the screen for a
                                      screenshot of just that part (Esc cancels)
   Windows + Alt + R                  start / stop recording the screen (Record)
+  Windows + V                        clipboard history: the last 25 things you
+                                     copied (text and pictures). Pick one (click,
+                                     or arrows + Enter) and it's pasted where you
+                                     were. Delete removes one. Text copied in
+                                     ccos apps now pastes into Firefox and other
+                                     apps too, and the other way round.
+  The bell (right of the clock)      notification centre: every notification is
+                                     kept here after its card goes away. The
+                                     number on the bell is how many you missed.
   Start menu search                  open the start menu and just type: apps,
                                      Settings pages ("wifi", "time", "dark")
                                      and files/folders on D: and in Downloads.
@@ -174,7 +183,10 @@ Apps (start menu):
                one window, in tabs: Apps, Files, Images (with small previews),
                Videos, Music and Downloads. Just type to search the tab, Tab
                switches tabs, click something (or Enter for the first one) to
-               open it. Newest files come first.
+               open it (the Finder then closes). Newest files come first.
+  Animations   windows pour into their Dock or taskbar icon when minimized
+               and pour back out, grow in when they open and fade when they
+               close. Settings > Appearance > Window animations turns them off.
   File Explorer's Favorites: Documents (yellow), Images (blue), Downloads
                (green) and Videos (purple). Images and Videos are on D:,
                Downloads is where Firefox and other Flathub apps save.
@@ -201,6 +213,17 @@ Apps (start menu):
                press again to stop. The preview is mirrored, like a mirror;
                the saved photos and videos aren't. If it says "No camera
                found", check the laptop's camera switch or F-key.
+  Paint        draw: pencil, brush, eraser, line, box, circle, fill, colour
+               picker; 4 sizes, 16 colours. Ctrl+Z / Ctrl+Y undo / redo,
+               Ctrl+V pastes the last copied picture (a screenshot), Ctrl+S
+               saves to Images ("Drawing ....png"). Right-click a picture in
+               File Explorer > Edit in Paint.
+  Calendar     a month, with a dot on days that have something. Pick a day,
+               type a time (18:30) and what it is, Add reminder; at that time
+               a notification pops up, even with Calendar closed. Saved on D:.
+  System Monitor  processor and memory graphs for the last minute, D:'s free
+               space, the processor temperature, and the running programs
+               (busiest first). Pick one and End task stops it.
   Calculator   like the Windows 7 one; also takes keyboard input
                (numbers, + - * /, Enter, Backspace, Esc = clear)
   Solitaire    classic Klondike: click the deck to turn cards, drag cards
@@ -320,8 +343,13 @@ Apps from Flathub (Flatpak):
   Minecraft, older programs) open inside an "X11 apps" window. Alt + drag
   moves their windows; F11 makes the X11 apps window full screen. It closes
   by itself when the last X11 app quits.
-  Game controllers (Xbox, PlayStation, Switch, Steam), webcams, USB sound
-  cards and Lenovo laptop keys have drivers now.
+  Drivers: Intel, AMD and Nvidia (basic) graphics; Intel, Realtek, MediaTek,
+  Qualcomm/Atheros and Broadcom Wi-Fi and Bluetooth; Intel "SOF" sound (newer
+  laptops) and USB sound; SD card readers; USB and wired network adapters;
+  game controllers (Xbox, PlayStation, Switch, Steam); webcams; USB serial
+  (Arduino and similar); Lenovo, ThinkPad, Asus and Acer laptop keys. On
+  purpose there is no driver for the laptop's own NVMe SSD, so ccos can't
+  see or change Windows.
   Graphics chip: Settings > About > "Let apps draw with the graphics chip"
   (experimental, off at first). With it on, apps you start afterwards
   (Firefox, games) draw with the Intel graphics instead of the processor;
