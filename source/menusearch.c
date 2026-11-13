@@ -37,7 +37,8 @@ static void ms_add(int kind, int icon, int tab, const char *label, const char *c
 }
 
 /* the file list is read by a helper thread (a USB stick can take a while), then taken over here */
-typedef struct { char **v; int n; } MsList;
+typedef struct { char **v; long long *t; int n; } MsList;
+static long long *ms_mtime;                             /* when each was changed (for the Finder) */
 static void ms_walk(MsList *L, const char *dir, int depth) {
     if (depth > 6 || L->n >= 4000) return;
     DIR *d = opendir(dir); if (!d) return;
@@ -48,6 +49,8 @@ static void ms_walk(MsList *L, const char *dir, int depth) {
         struct stat st; if (lstat(p, &st)) continue;
         char **nv = realloc(L->v, sizeof *L->v * (size_t)(L->n + 1)); if (!nv) break;
         L->v = nv;
+        long long *nt = realloc(L->t, sizeof *L->t * (size_t)(L->n + 1)); if (!nt) break;
+        L->t = nt; L->t[L->n] = (long long)st.st_mtime;
         size_t l = strlen(p);
         L->v[L->n] = malloc(l + 2);
         if (!L->v[L->n]) break;
@@ -62,11 +65,12 @@ static MsList ms_new; static volatile int ms_scanning, ms_scan_ready;
 static char ms_dl[300];
 static void *ms_scan_thread(void *arg) {
     (void)arg;
-    MsList L = { NULL, 0 };
+    MsList L = { NULL, NULL, 0 };
     ms_walk(&L, "/data", 0);
     if (strncmp(ms_dl, "/data", 5)) ms_walk(&L, ms_dl, 0);
     ms_new = L;
     __atomic_store_n(&ms_scan_ready, 1, __ATOMIC_RELEASE);
+    if (wake_pipe[1] >= 0) { if (write(wake_pipe[1], "s", 1) < 0) {} }
     return NULL;
 }
 static void ms_scan_files(void) {
@@ -78,13 +82,15 @@ static void ms_scan_files(void) {
     pthread_attr_destroy(&at);
 }
 static void ms_update(void);
+static void finder_files_changed(void);
 /* in the main loop: the helper thread finished - use its list */
 static void ms_tick(void) {
     if (!ms_scanning || !__atomic_load_n(&ms_scan_ready, __ATOMIC_ACQUIRE)) return;
     for (int i = 0; i < ms_nfiles; i++) free(ms_files[i]);
-    free(ms_files);
-    ms_files = ms_new.v; ms_nfiles = ms_new.n; ms_new.v = NULL; ms_new.n = 0;
+    free(ms_files); free(ms_mtime);
+    ms_files = ms_new.v; ms_mtime = ms_new.t; ms_nfiles = ms_new.n; ms_new.v = NULL; ms_new.t = NULL; ms_new.n = 0;
     ms_scanning = 0; ms_scan_ready = 0;
+    finder_files_changed();
     if (menu_open && ms_q[0]) { int sel = ms_sel; ms_update(); ms_sel = imin(sel, imax(0, ms_n - 1)); repaint_menu(); }
 }
 

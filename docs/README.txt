@@ -156,11 +156,25 @@ Apps (start menu):
                smooth icons and new _ [] X buttons; it has Light and Dark
                modes. Dark mode also darkens ccos's own apps (Photos,
                Videos, Solitaire and Flathub apps keep their own colours).
-  Desktop background: right-click a picture in File Explorer > Set as
-               desktop background. Right-click an empty spot on the desktop >
-               Customize opens Settings > Appearance, where you choose how the
-               picture sits: Fill, Fit, Stretch, Tile, Center or Span, or
-               Remove picture to go back to just the colour.
+  Desktop background: Settings > Appearance has 7 pictures made for ccos
+               (Water is the first one). Or use your own: right-click a picture
+               in File Explorer > Set as desktop background. Right-click an
+               empty spot on the desktop > Customize opens Settings >
+               Appearance, where you choose how your picture sits: Fill, Fit,
+               Stretch, Tile, Center or Span, or Remove picture.
+  Taskbar (Settings > Appearance): Bar is the usual taskbar with the start
+               menu. Dock is a floating shelf in the middle of the bottom:
+               point at it and the icons grow, with the name above the one
+               under the mouse. First comes /o\ (Finder), then pinned apps
+               and open windows (a dot under the open ones), then the Recycle
+               Bin. Right-click an icon to pin or unpin it. The clock, network,
+               battery and a power button (Sleep, Restart, Shut down) are in
+               the bottom right corner.
+  Finder       (Dock only: click /o\ or press the Windows key) everything in
+               one window, in tabs: Apps, Files, Images (with small previews),
+               Videos, Music and Downloads. Just type to search the tab, Tab
+               switches tabs, click something (or Enter for the first one) to
+               open it. Newest files come first.
   File Explorer's Favorites: Documents (yellow), Images (blue), Downloads
                (green) and Videos (purple). Images and Videos are on D:,
                Downloads is where Firefox and other Flathub apps save.

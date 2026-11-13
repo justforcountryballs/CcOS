@@ -120,18 +120,14 @@ static DeskIcon desk_icons[MAXDESK] = {
 static int ndesk = 7;                     /* the built-in ones above; more are added (Flathub apps) */
 #define NDESK ndesk
 
-/* ---- background colors offered in Settings ------------------------- */
-typedef struct { const char *name; uint32_t top, bottom, glow; } Wallpaper;
+/* ---- background pictures offered in Settings ------------------------- */
+typedef struct { const char *name, *file; } Wallpaper;
 #define RGB(r,g,b) (((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
+#define WALL_DIR "/usr/share/ccos/wallpapers"     /* NAME.jpg, and NAME-small.png for Settings */
 static const Wallpaper wallpapers[] = {
-    { "Blue",     RGB(0x1c, 0x5c, 0xa8), RGB(0x06, 0x24, 0x56), RGB(0x6c, 0xc4, 0xf4) },
-    { "Teal",     RGB(0x0e, 0x76, 0x7c), RGB(0x03, 0x2c, 0x32), RGB(0x5c, 0xdc, 0xcc) },
-    { "Green",    RGB(0x2c, 0x80, 0x36), RGB(0x0a, 0x2e, 0x12), RGB(0x9a, 0xe0, 0x78) },
-    { "Purple",   RGB(0x56, 0x38, 0x9a), RGB(0x18, 0x0a, 0x3a), RGB(0xb4, 0x8c, 0xf0) },
-    { "Pink",     RGB(0xac, 0x38, 0x78), RGB(0x3c, 0x0a, 0x26), RGB(0xff, 0x9a, 0xd0) },
-    { "Red",      RGB(0x9c, 0x28, 0x28), RGB(0x38, 0x08, 0x08), RGB(0xf0, 0x8a, 0x6c) },
-    { "Orange",   RGB(0xbc, 0x68, 0x18), RGB(0x48, 0x1c, 0x04), RGB(0xff, 0xc0, 0x70) },
-    { "Graphite", RGB(0x48, 0x50, 0x5a), RGB(0x12, 0x16, 0x1a), RGB(0x9a, 0xa6, 0xb4) },
+    { "Water", "water" }, { "Floating peaks", "floating-peaks" }, { "Mountain lake", "mountain-lake" },
+    { "Purple slabs", "purple-slabs" }, { "Stardust", "stardust" }, { "Above the clouds", "above-the-clouds" },
+    { "Snowy lake", "snowy-lake" },
 };
 #define NWALL ((int)(sizeof wallpapers / sizeof *wallpapers))
 
@@ -428,7 +424,12 @@ static int pin_index(const char *cmd) {
 }
 
 /* ---- layout ------------------------------------------------------ */
-#define TASKBAR_H  40
+static int set_dock;             /* the taskbar as a Dock (dock.c) */
+#define DOCK_RES   76         /* the bottom strip the Dock keeps for itself */
+#define TASKBAR_H  (set_dock ? DOCK_RES : 40)
+#define TBI_H      40         /* clock, network, battery: their strip */
+#define TBI_Y      (H - TBI_H - (set_dock ? 14 : 0))
+#define TB_RIGHT   (W - (set_dock ? 40 : 0))   /* the Dock has a power button right of the clock */
 #define ORB_R      17
 #define MENU_W     400
 #define MENU_H     680
@@ -441,7 +442,6 @@ static int pin_index(const char *cmd) {
 /* ---- framebuffer + drawing ----------------------------------------- */
 static int W, H, stride, swap_rb;
 static uint32_t *fbmem, *back, *wall;   /* back = the scene, without cursor */
-static uint8_t *glowmap;                /* wallpaper glow strength per pixel */
 static int tty = -1;
 
 #define R(c) (((c) >> 16) & 255)
@@ -1072,19 +1072,10 @@ static void draw_icon_raw(int icon, int cx, int cy, int r) {
 }
 
 /* ---- wallpaper: gradient + soft glow ------------------------------- */
-static void make_glowmap(void) {               /* the expensive part, once */
-    float gx = W * 0.5f, gy = H * 0.42f, gr = H * 0.75f;
-    for (int y = 0; y < H; y++) {
-        float dy2 = (y - gy) * (y - gy) * 1.6f;
-        for (int x = 0; x < W; x++) {
-            float d = sqrtf((x - gx) * (x - gx) + dy2) / gr;
-            glowmap[y * W + x] = (uint8_t)(clampf(1 - d, 0, 1) * 0.45f * 255);
-        }
-    }
-}
 
 /* the background picture, decoded once */
 static struct { char path[300]; uint8_t *px; int w, h; } wimg;
+static void wall_blit(const uint8_t *src, int iw, int ih, int mode);
 static void wall_picture(void) {
     if (!set_wall_img[0]) return;
     if (strcmp(wimg.path, set_wall_img)) {
@@ -1093,7 +1084,9 @@ static void wall_picture(void) {
         snprintf(wimg.path, sizeof wimg.path, "%s", set_wall_img);
     }
     if (!wimg.px || wimg.w <= 0 || wimg.h <= 0) return;
-    int iw = wimg.w, ih = wimg.h, mode = set_wall_fit;
+    wall_blit(wimg.px, wimg.w, wimg.h, set_wall_fit);
+}
+static void wall_blit(const uint8_t *src, int iw, int ih, int mode) {
     /* where the picture goes: dw x dh at (dx, dy); Tile repeats it */
     double sx = 1, sy = 1;
     if (mode == WF_FILL || mode == WF_SPAN) sx = sy = fmax((double)W / iw, (double)H / ih);
@@ -1117,7 +1110,7 @@ static void wall_picture(void) {
             for (int j = 0; j < ay; j++)
                 for (int i = 0; i < ax; i++) {
                     int px = clampi((int)(fx + i - ax / 2.0 + 0.5), 0, iw - 1), py = clampi((int)(fy + j - ay / 2.0 + 0.5), 0, ih - 1);
-                    const uint8_t *p = wimg.px + ((size_t)py * iw + px) * 4;
+                    const uint8_t *p = src + ((size_t)py * iw + px) * 4;
                     r += p[0]; g += p[1]; b += p[2]; a += p[3]; n++;
                 }
             uint32_t d = wall[y * W + x], al = a / n;
@@ -1149,18 +1142,11 @@ static int set_wallpaper_file(const char *src) {
     return 1;
 }
 static void make_wallpaper(void) {
-    const Wallpaper *wp = &wallpapers[set_wall];
-    for (int y = 0; y < H; y++) {
-        uint32_t row = mix(wp->top, wp->bottom, (float)y / H);
-        for (int x = 0; x < W; x++) {
-            int g = glowmap[y * W + x];
-            uint32_t c = row, gc = wp->glow;
-            wall[y * W + x] = g ? RGB((R(c) * (255 - g) + R(gc) * g) / 255,
-                                      (G(c) * (255 - g) + G(gc) * g) / 255,
-                                      (B(c) * (255 - g) + B(gc) * g) / 255) : c;
-        }
-    }
-    wall_picture();
+    for (size_t i = 0; i < (size_t)W * H; i++) wall[i] = RGB(0x20, 0x2c, 0x3c);
+    char p[200]; snprintf(p, sizeof p, WALL_DIR "/%s.jpg", wallpapers[set_wall].file);
+    int iw, ih, c; uint8_t *px = stbi_load(p, &iw, &ih, &c, 4);
+    if (px) { wall_blit(px, iw, ih, WF_FILL); stbi_image_free(px); }
+    wall_picture();                                   /* the user's own picture, on top */
 }
 
 /* ---- settings file -------------------------------------------------- */
@@ -1172,7 +1158,7 @@ static void load_settings(void) {
     int had_desk = 0;
     while (fgets(line, sizeof line, f)) {
         int v;
-        if (sscanf(line, "wallpaper=%d", &v) == 1 && v >= 0 && v < NWALL) set_wall = v;
+        if (sscanf(line, "wallpic=%d", &v) == 1 && v >= 0 && v < NWALL) set_wall = v;   /* (wallpaper= was a colour, before 1.4) */
         if (sscanf(line, "clock24=%d", &v) == 1) set_clock24 = !!v;
         if (sscanf(line, "sound=%d", &v) == 1) set_sound = !!v;
         if (sscanf(line, "volume=%d", &v) == 1) set_volume = clampi(v, 0, 100);
@@ -1182,6 +1168,7 @@ static void load_settings(void) {
         if (sscanf(line, "net=%d", &v) == 1) set_net = !!v;
         if (sscanf(line, "wifi=%d", &v) == 1) set_wifi = !!v;
         if (sscanf(line, "style=%d", &v) == 1) set_style = set_smooth = !!v;
+        if (sscanf(line, "dock=%d", &v) == 1) set_dock = !!v;
         if (sscanf(line, "dark=%d", &v) == 1) set_dark = !!v;
         if (sscanf(line, "cursor2=%d", &v) == 1 && v >= 0 && v < 3) set_cursor_col = v;   /* (the old "cursor=" was the old pointer: black is the new look) */
         if (sscanf(line, "cursorsize=%d", &v) == 1 && v >= 0 && v < 3) set_cursor_size = v;
@@ -1248,8 +1235,8 @@ static void save_settings(void) {
     mkdir("/data", 0755);
     FILE *f = fopen(CONF_PATH ".tmp", "w");
     if (!f) return;
-    fprintf(f, "wallpaper=%d\nclock24=%d\nsound=%d\nnet=%d\nwifi=%d\nfont=%d\n", set_wall, set_clock24, set_sound, set_net, set_wifi, set_smooth);
-    fprintf(f, "volume=%d\nmuted=%d\nstyle=%d\ndark=%d\n", set_volume, set_muted, set_style, set_dark);
+    fprintf(f, "wallpic=%d\nclock24=%d\nsound=%d\nnet=%d\nwifi=%d\nfont=%d\n", set_wall, set_clock24, set_sound, set_net, set_wifi, set_smooth);
+    fprintf(f, "volume=%d\nmuted=%d\nstyle=%d\ndark=%d\ndock=%d\n", set_volume, set_muted, set_style, set_dark, set_dock);
     fprintf(f, "wallimg=%s\nwallfit=%d\n", set_wall_img, set_wall_fit);
     fprintf(f, "cursor2=%d\ncursorsize=%d\ntpspeed=%d\n", set_cursor_col, set_cursor_size, set_tp_speed);
     fprintf(f, "bright=%d\nscreenoff=%d\nsleepafter=%d\nlid=%d\n", set_bright, set_off_idx, set_sleep_idx, set_lid);
@@ -1344,7 +1331,7 @@ static int content_drag = -1;          /* window whose content is being dragged 
 static long long last_click_ms; static int last_click_win = -1;
 
 /* what the mouse is pointing at ("hot"), so it can be highlighted */
-enum { HOT_NONE, HOT_ORB, HOT_SD, HOT_LITEM, HOT_RITEM, HOT_CAP, HOT_TASK, HOT_CONTENT, HOT_ICON, HOT_POPUP, HOT_TRAY, HOT_NETP, HOT_BAT, HOT_CLOCK, HOT_CLKP, HOT_SRES, HOT_SBOX, HOT_REC };
+enum { HOT_NONE, HOT_ORB, HOT_SD, HOT_LITEM, HOT_RITEM, HOT_CAP, HOT_TASK, HOT_CONTENT, HOT_ICON, HOT_POPUP, HOT_TRAY, HOT_NETP, HOT_BAT, HOT_CLOCK, HOT_CLKP, HOT_SRES, HOT_SBOX, HOT_REC, HOT_DOCKBIN, HOT_DPOWER };
 typedef struct { int type, a, b; } Hot;
 static Hot hot;
 
@@ -1397,7 +1384,8 @@ static int tb_items(TbItem *it) {
         if (w >= 0) used[w] = 1;
         it[n].win = w; it[n].pin = p; n++;
     }
-    for (int i = 0; i < MAXWIN; i++) if (wins[i].open && !used[i]) { it[n].win = i; it[n].pin = -1; n++; }
+    for (int i = 0; i < MAXWIN; i++)
+        if (wins[i].open && !used[i] && !(set_dock && !strcmp(wins[i].cmd, "@finder"))) { it[n].win = i; it[n].pin = -1; n++; }   /* the Dock has the Finder first */
     return n;
 }
 static void task_rect(int k, int *x, int *y, int *w, int *h) {
@@ -1440,7 +1428,7 @@ static int di_at_mouse(void) {
 #define POP_IH 26
 enum { PA_NONE, PA_OPEN, PA_PIN, PA_UNPIN, PA_CLOSE, PA_DESK_ADD, PA_DESK_DEL, PA_OPEN_FILE, PA_SET_WALL, PA_CUSTOMIZE, PA_EJECT, PA_PRINT,
        PA_CUT, PA_COPY, PA_PASTE, PA_RENAME, PA_DELETE, PA_ZIP, PA_UNZIP, PA_NEWFOLDER, PA_SELALL, PA_RESTORE, PA_RESTOREALL, PA_EMPTYBIN,
-       PA_NEWMENU, PA_NEWFILE /* .. PA_NEWFILE + 7: File Explorer's New > list */ };
+       PA_NEWMENU, PA_NEWFILE /* .. PA_NEWFILE + 7: File Explorer's New > list */, PA_SLEEP = PA_NEWFILE + 20, PA_RESTART, PA_SHUTDOWN };
 #define POP_SUBMAX 8
 #define SUB_W 236
 static struct {
@@ -1492,7 +1480,7 @@ static int clk_panel;                         /* the clock's calendar panel is o
 #define CLKP_H 392
 static int clkp_x0(void), clkp_y0(void), clkp_hit(int px, int py);
 #define TRAY_W 34
-static int tray_x(void) { return W - CLOCK_W - 8 - TRAY_W; }
+static int tray_x(void) { return TB_RIGHT - CLOCK_W - 8 - TRAY_W; }
 
 /* ---- Wi-Fi state, read from wpa_supplicant ---------------------------- */
 typedef struct {
@@ -2219,6 +2207,12 @@ static void net_do(int id) {
     netp_repaint(); tray_repaint();
 }
 
+static long long ui_ms(void);
+static void aa_line(float x0, float y0, float x1, float y1, float wdt, uint32_t c);
+static int rec_on(void);
+static int finder_running(void);
+#include "dock.c"                 /* the taskbar's other look: a Dock */
+
 static Hot find_hot(void) {
     Hot h = { HOT_NONE, 0, 0 };
     if (clk_panel && in_rect(clkp_x0(), clkp_y0(), CLKP_W, CLKP_H)) {
@@ -2247,9 +2241,18 @@ static Hot find_hot(void) {
         }
         if (in_rect(pop.x, pop.y, POP_W, pop_h())) return h;
     }
+    if (set_dock && !taskbar_hidden() && !in_menu()) {            /* the Dock: its icons can grow above its strip */
+        DockSlot ds[DOCK_MAXS]; int sx, sw, n = dock_layout(ds, &sx, &sw), i = dock_hit_slot(ds, n);
+        if (i >= 0) {
+            if (ds[i].kind == DS_FINDER) h.type = HOT_ORB;
+            else if (ds[i].kind == DS_BIN) h.type = HOT_DOCKBIN;
+            else { h.type = HOT_TASK; h.a = ds[i].k; }
+            return h;
+        }
+    }
     int dx = mx - orb_cx(), dy = my - orb_cy();
-    if ((dx * dx + dy * dy <= (ORB_R + 2) * (ORB_R + 2) && !taskbar_hidden()) ||
-        (mx < orb_cx() && ON_TASKBAR)) { h.type = HOT_ORB; return h; }  /* the corner counts too */
+    if (!set_dock && ((dx * dx + dy * dy <= (ORB_R + 2) * (ORB_R + 2) && !taskbar_hidden()) ||
+        (mx < orb_cx() && ON_TASKBAR))) { h.type = HOT_ORB; return h; }  /* the corner counts too */
     if (in_menu()) {
         for (int i = 0; i < NPOWER; i++) {
             int x, y, w, hh; power_rect(i, &x, &y, &w, &hh);
@@ -2267,16 +2270,18 @@ static Hot find_hot(void) {
             if (in_rect(RP_X, ITEMS_Y + i * ITEM_H, RP_W, ITEM_H)) { h.type = HOT_RITEM; h.a = i; return h; }
         return h;
     }
-    if (ON_TASKBAR && in_rect(tray_x(), H - TASKBAR_H + 3, TRAY_W, TASKBAR_H - 6)) {
+    if (ON_TASKBAR && set_dock && in_rect(dpow_x(), TBI_Y + 3, DPOW_W, TBI_H - 6)) { h.type = HOT_DPOWER; return h; }
+    if (ON_TASKBAR && in_rect(tray_x(), TBI_Y + 3, TRAY_W, TBI_H - 6)) {
         h.type = HOT_TRAY; return h;
     }
-    if (ON_TASKBAR && in_rect(W - CLOCK_W - 8, H - TASKBAR_H + 3, CLOCK_W + 6, TASKBAR_H - 6)) {
+    if (ON_TASKBAR && in_rect(TB_RIGHT - CLOCK_W - 8, TBI_Y + 3, CLOCK_W + 6, TBI_H - 6)) {
         h.type = HOT_CLOCK; return h;
     }
-    if (ON_TASKBAR && rec_on() && in_rect(rec_tb_x(), H - TASKBAR_H + 3, REC_TB_W, TASKBAR_H - 6)) { h.type = HOT_REC; return h; }
-    if (ON_TASKBAR && bat.present && in_rect(bat_x(), H - TASKBAR_H + 3, BAT_W, TASKBAR_H - 6)) {
+    if (ON_TASKBAR && rec_on() && in_rect(rec_tb_x(), TBI_Y + 3, REC_TB_W, TBI_H - 6)) { h.type = HOT_REC; return h; }
+    if (ON_TASKBAR && bat.present && in_rect(bat_x(), TBI_Y + 3, BAT_W, TBI_H - 6)) {
         h.type = HOT_BAT; return h;
     }
+    if (ON_TASKBAR && set_dock) return h;
     if (ON_TASKBAR) {
         TbItem it[MAXPINS + MAXWIN];
         int n = tb_items(it);
@@ -2355,11 +2360,11 @@ static void draw_clock(void) {
         if (tbuf[0] == '0') memmove(tbuf, tbuf + 1, strlen(tbuf));   /* 09:05 -> 9:05 */
     }
     strftime(dbuf, sizeof dbuf, "%d.%m.%Y", &tm);
-    int ax = W - CLOCK_W - 4, y0 = H - TASKBAR_H;
+    int ax = TB_RIGHT - CLOCK_W - 4, y0 = TBI_Y;
     if (clk_panel || hot.type == HOT_CLOCK) {                  /* hovered, or its panel is open */
-        if (set_style) fill_round(ax - 4, y0 + 3, CLOCK_W + 6, TASKBAR_H - 6, 4, clk_panel ? TH()->bar_active : TH()->bar_hover, 255);
-        else { fill_round_grad(ax - 4, y0 + 3, CLOCK_W + 6, TASKBAR_H - 6, 3, RGB(0xff, 0xff, 0xff), RGB(0x80, 0x90, 0xa0), clk_panel ? 70 : 45);
-               stroke_round(ax - 4, y0 + 3, CLOCK_W + 6, TASKBAR_H - 6, 3, RGB(0, 0, 0), 100); }
+        if (set_style) fill_round(ax - 4, y0 + 3, CLOCK_W + 6, TBI_H - 6, 4, clk_panel ? TH()->bar_active : TH()->bar_hover, 255);
+        else { fill_round_grad(ax - 4, y0 + 3, CLOCK_W + 6, TBI_H - 6, 3, RGB(0xff, 0xff, 0xff), RGB(0x80, 0x90, 0xa0), clk_panel ? 70 : 45);
+               stroke_round(ax - 4, y0 + 3, CLOCK_W + 6, TBI_H - 6, 3, RGB(0, 0, 0), 100); }
     }
     if (set_style) {
         draw_text(ax + (CLOCK_W - text_w(tbuf)) / 2, y0 + 3, tbuf, TH()->text, 255);
@@ -2428,6 +2433,8 @@ static void draw_task_buttons(void) {
 
 static void draw_taskbar(void) {
     int y0 = H - TASKBAR_H;
+    if (set_dock) { if (clip_y1 <= H - DOCK_TOP) return; draw_dock(); draw_dock_pill(); }
+    else {
     if (clip_y1 <= y0) return;
     if (set_style) {
         fill_rect(0, y0, W, TASKBAR_H, TH()->bar, 255);
@@ -2441,26 +2448,27 @@ static void draw_taskbar(void) {
     }
     draw_orb();
     draw_task_buttons();
+    }
     draw_clock();
     rec_draw_tb();
     /* network icon in the tray */
-    int tx = tray_x(), ty = H - TASKBAR_H + 3;
+    int tx = tray_x(), ty = TBI_Y + 3;
     if (net_panel || hot.type == HOT_TRAY) {
-        if (set_style) fill_round(tx, ty, TRAY_W, TASKBAR_H - 6, 4, net_panel ? TH()->bar_active : TH()->bar_hover, 255);
+        if (set_style) fill_round(tx, ty, TRAY_W, TBI_H - 6, 4, net_panel ? TH()->bar_active : TH()->bar_hover, 255);
         else {
-            fill_round_grad(tx, ty, TRAY_W, TASKBAR_H - 6, 3, RGB(0xff, 0xff, 0xff), RGB(0x80, 0x90, 0xa0), net_panel ? 70 : 45);
-            stroke_round(tx, ty, TRAY_W, TASKBAR_H - 6, 3, RGB(0, 0, 0), 100);
+            fill_round_grad(tx, ty, TRAY_W, TBI_H - 6, 3, RGB(0xff, 0xff, 0xff), RGB(0x80, 0x90, 0xa0), net_panel ? 70 : 45);
+            stroke_round(tx, ty, TRAY_W, TBI_H - 6, 3, RGB(0, 0, 0), 100);
         }
     }
     draw_tray_icon(tx, ty);
     if (bat.present) {                                     /* the battery */
         int bx = bat_x();
         if (hot.type == HOT_BAT) {
-            if (set_style) fill_round(bx, ty, BAT_W, TASKBAR_H - 6, 4, TH()->bar_hover, 255);
-            else { fill_round_grad(bx, ty, BAT_W, TASKBAR_H - 6, 3, RGB(0xff, 0xff, 0xff), RGB(0x80, 0x90, 0xa0), 45);
-                   stroke_round(bx, ty, BAT_W, TASKBAR_H - 6, 3, RGB(0, 0, 0), 100); }
+            if (set_style) fill_round(bx, ty, BAT_W, TBI_H - 6, 4, TH()->bar_hover, 255);
+            else { fill_round_grad(bx, ty, BAT_W, TBI_H - 6, 3, RGB(0xff, 0xff, 0xff), RGB(0x80, 0x90, 0xa0), 45);
+                   stroke_round(bx, ty, BAT_W, TBI_H - 6, 3, RGB(0, 0, 0), 100); }
         }
-        draw_battery(bx + 5, ty + (TASKBAR_H - 6) / 2 - 6, bat.pct, bat.charging || bat.ac, set_style ? TH()->text : RGB(0xf0, 0xf4, 0xf8));
+        draw_battery(bx + 5, ty + (TBI_H - 6) / 2 - 6, bat.pct, bat.charging || bat.ac, set_style ? TH()->text : RGB(0xf0, 0xf4, 0xf8));
     }
 }
 
@@ -2793,6 +2801,28 @@ static void put_back(int x, int y, uint32_t c, int a) {
  * =================================================================== */
 #define SW_SIZE 38                 /* color swatch */
 #define SW_GAP  10
+#define WT_W 72                    /* background thumbnail */
+#define WT_H 41
+static uint32_t *wthumbs[16];
+static void wall_thumb(int i, int x, int y) {
+    if (!wthumbs[i]) {
+        char p[200]; snprintf(p, sizeof p, WALL_DIR "/%s-small.png", wallpapers[i].file);
+        int iw, ih, c; uint8_t *px = stbi_load(p, &iw, &ih, &c, 4);
+        wthumbs[i] = calloc(WT_W * WT_H, 4);
+        if (px && wthumbs[i]) for (int yy = 0; yy < WT_H; yy++) for (int xx = 0; xx < WT_W; xx++) {
+            unsigned r = 0, g = 0, b = 0, n = 0;                  /* 2x2 average */
+            for (int j = 0; j < 2; j++) for (int k = 0; k < 2; k++) {
+                int sx = imin(iw - 1, xx * iw / WT_W + k), sy = imin(ih - 1, yy * ih / WT_H + j);
+                const uint8_t *q = px + ((size_t)sy * iw + sx) * 4; r += q[0]; g += q[1]; b += q[2]; n++;
+            }
+            wthumbs[i][yy * WT_W + xx] = RGB(r / n, g / n, b / n);
+        }
+        if (px) stbi_image_free(px);
+    }
+    if (!wthumbs[i]) return;
+    for (int yy = imax(y, clip_y0); yy < imin(y + WT_H, clip_y1); yy++)
+        for (int xx = imax(x, clip_x0); xx < imin(x + WT_W, clip_x1); xx++) back[yy * W + xx] = wthumbs[i][(yy - y) * WT_W + (xx - x)];
+}
 #define TG_W    46                 /* on/off switch */
 #define TG_H    24
 #define ST_W    680                /* window content size */
@@ -3145,19 +3175,18 @@ static void settings_draw(int cx, int cy, int cw, int ch) {
     int y = cy + ST_Y;
     switch (st_tab) {
     case TAB_LOOK: {
-        st_heading(cx, y + 20, "Background color");
+        st_heading(cx, y + 20, "Background");
         for (int i = 0; i < NWALL; i++) {
-            int x = cx + 24 + i * (SW_SIZE + SW_GAP), sy = cy + LK_SW_Y;
-            if (i == set_wall) {
-                fill_round(x - 4, sy - 4, SW_SIZE + 8, SW_SIZE + 8, 6, RGB(0x33, 0x99, 0xff), 255);
-                fill_round(x - 2, sy - 2, SW_SIZE + 4, SW_SIZE + 4, 5, RGB(255, 255, 255), 255);
+            int x = cx + 24 + i * (WT_W + SW_GAP), sy = cy + LK_SW_Y;
+            if (i == set_wall && !set_wall_img[0]) {
+                fill_round(x - 4, sy - 4, WT_W + 8, WT_H + 8, 6, RGB(0x33, 0x99, 0xff), 255);
+                fill_round(x - 2, sy - 2, WT_W + 4, WT_H + 4, 5, RGB(255, 255, 255), 255);
             }
-            dk_begin(x, sy, SW_SIZE, SW_SIZE);
-            fill_round_grad(x, sy, SW_SIZE, SW_SIZE, 4, mix(wallpapers[i].top, wallpapers[i].glow, 0.35f), wallpapers[i].bottom, 255);
-            stroke_round(x, sy, SW_SIZE, SW_SIZE, 4, RGB(0, 0, 0), 70);
-            dk_end();
+            dark_keep(x, sy, WT_W, WT_H);
+            wall_thumb(i, x, sy);
+            stroke_round(x, sy, WT_W, WT_H, 3, RGB(0, 0, 0), 70);
         }
-        draw_text(cx + 24, cy + LK_SW_Y + SW_SIZE + 10, wallpapers[set_wall].name, grey, 255);
+        draw_text(cx + 24, cy + LK_SW_Y + WT_H + 10, set_wall_img[0] ? "Your picture" : wallpapers[set_wall].name, grey, 255);
         st_line(cx, cw, cy + LK_PIC_Y - 24);
         st_heading(cx, cy + LK_PIC_Y - 12, "Background picture");
         {
@@ -3178,7 +3207,7 @@ static void settings_draw(int cx, int cy, int cw, int ch) {
                 for (int i = 0; i < NWF; i++)
                     st_choice(cx + 24 + i * (LK_POS_W + 8), cy + LK_PIC_Y + 140, LK_POS_W, 30, wf_names[i], i == set_wall_fit);
             } else {
-                draw_text(tx, py + 2, "No picture: just the color.", text, 255);
+                draw_text(tx, py + 2, "No picture of your own.", text, 255);
                 draw_text(tx, py + 26, "To use one, right-click a picture", grey, 255);
                 draw_text(tx, py + 44, "in File Explorer and choose", grey, 255);
                 draw_text(tx, py + 62, "\"Set as desktop background\".", grey, 255);
@@ -3189,6 +3218,11 @@ static void settings_draw(int cx, int cy, int cw, int ch) {
         st_choice(cx + 24, cy + LK_FONT_Y + 12, 150, 30, "Classic", set_style == 0);
         st_choice(cx + 24 + 162, cy + LK_FONT_Y + 12, 150, 30, "Modern", set_style == 1);
         draw_text(cx + 24, cy + LK_FONT_Y + 50, set_style ? "Flat windows, smooth text and icons" : "Glass windows, blocky pixel text", grey, 255);
+        draw_text_bold(cx + 372, cy + LK_FONT_Y - 12, "Taskbar", RGB(0x1e, 0x39, 0x87));
+        st_choice(cx + 372, cy + LK_FONT_Y + 12, 130, 30, "Bar", set_dock == 0);
+        st_choice(cx + 514, cy + LK_FONT_Y + 12, 130, 30, "Dock", set_dock == 1);
+        draw_text(cx + 372, cy + LK_FONT_Y + 50, set_dock ? "Icons grow when you point" : "Start menu, window buttons", grey, 255);
+        draw_text(cx + 372, cy + LK_FONT_Y + 68, set_dock ? "at them; /o\\ opens Finder" : "and the clock", grey, 255);
         if (set_style) {
             draw_text(cx + 24, cy + LK_FONT_Y + 80, "Mode", text, 255);
             st_choice(cx + 24, cy + LK_FONT_Y + 100, 150, 30, "Light", !set_dark);
@@ -3433,9 +3467,13 @@ static void settings_click(int lx, int ly, int cw, int ch) {
     switch (st_tab) {
     case TAB_LOOK:
         for (int i = 0; i < NWALL; i++) {
-            int x = 24 + i * (SW_SIZE + SW_GAP);
-            if (lx >= x && lx < x + SW_SIZE && ly >= LK_SW_Y && ly < LK_SW_Y + SW_SIZE) {
-                if (i != set_wall) { set_wall = i; save_settings(); make_wallpaper(); repaint_all(); }
+            int x = 24 + i * (WT_W + SW_GAP);
+            if (lx >= x && lx < x + WT_W && ly >= LK_SW_Y && ly < LK_SW_Y + WT_H) {
+                if (i != set_wall || set_wall_img[0]) {
+                    set_wall = i;
+                    if (set_wall_img[0]) { unlink(set_wall_img); set_wall_img[0] = 0; wimg.path[0] = 0; }   /* instead of your picture */
+                    save_settings(); make_wallpaper(); repaint_all();
+                }
                 return;
             }
         }
@@ -3456,6 +3494,8 @@ static void settings_click(int lx, int ly, int cw, int ch) {
         if (ly >= LK_FONT_Y + 12 && ly < LK_FONT_Y + 42) {
             if (lx >= 24 && lx < 174) style_set(0, set_dark);
             else if (lx >= 186 && lx < 336) style_set(1, set_dark);
+            else if (lx >= 372 && lx < 502) dock_set(0);
+            else if (lx >= 514 && lx < 644) dock_set(1);
         } else if (set_style && ly >= LK_FONT_Y + 100 && ly < LK_FONT_Y + 130) {
             if (lx >= 24 && lx < 174) style_set(1, 0);
             else if (lx >= 186 && lx < 336) style_set(1, 1);
@@ -3929,21 +3969,23 @@ static void repaint(int x, int y, int w, int h) {
 }
 
 static void repaint_all(void)     { repaint(0, 0, W, H); }
-static void repaint_taskbar(void) { repaint(0, H - TASKBAR_H, W, TASKBAR_H); }
+static void repaint_taskbar(void) { if (set_dock) repaint(0, H - DOCK_TOP, W, DOCK_TOP); else repaint(0, H - TASKBAR_H, W, TASKBAR_H); }
 static void repaint_menu(void)    { repaint(menu_x(), menu_y(), MENU_W + 4, MENU_H + 4); }
-static void repaint_clock(void)   { repaint(W - CLOCK_W - 8, H - TASKBAR_H, CLOCK_W + 8, TASKBAR_H); }
+static void repaint_clock(void)   { repaint(TB_RIGHT - CLOCK_W - 8, H - TASKBAR_H, CLOCK_W + 8, TASKBAR_H); }
 static void repaint_window(int i) { Win *w = &wins[i]; repaint(w->x - 2, w->y - 1, w->w + 7, w->h + 7); }
 
 static void repaint_hot(Hot h) {
     int x, y, w, hh;
     switch (h.type) {
-    case HOT_ORB:   repaint(orb_cx() - ORB_R - 2, orb_cy() - ORB_R - 2, 2 * ORB_R + 5, 2 * ORB_R + 5); break;
+    case HOT_ORB:   if (set_dock) repaint_taskbar(); else repaint(orb_cx() - ORB_R - 2, orb_cy() - ORB_R - 2, 2 * ORB_R + 5, 2 * ORB_R + 5); break;
+    case HOT_DOCKBIN: repaint_taskbar(); break;
+    case HOT_DPOWER: repaint(dpow_x(), H - TASKBAR_H, DPOW_W, TASKBAR_H); break;
     case HOT_SD:    power_rect(h.a, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
     case HOT_LITEM: repaint(LI_X, ITEMS_Y + h.a * ITEM_H, LI_W, ITEM_H); break;
     case HOT_SRES: repaint(LI_X, ITEMS_Y + h.a * ITEM_H, LI_W, ITEM_H); if (h.a != ms_sel) repaint(LI_X, ITEMS_Y + ms_sel * ITEM_H, LI_W, ITEM_H); break;
     case HOT_RITEM: repaint(RP_X, ITEMS_Y + h.a * ITEM_H, RP_W, ITEM_H); break;
     case HOT_CAP:   cap_rect(&wins[h.a], h.b, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
-    case HOT_TASK:  task_rect(h.a, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
+    case HOT_TASK:  if (set_dock) { repaint_taskbar(); break; } task_rect(h.a, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
     case HOT_ICON:  di_rect(h.a, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
     case HOT_POPUP:
         if (pop.sub_item >= 0) { popm_repaint(); break; }
@@ -7145,6 +7187,9 @@ static void pop_do(int i) {
     char cmd[112], name[40]; snprintf(cmd, sizeof cmd, "%s", pop.cmd); snprintf(name, sizeof name, "%s", pop.name);
     char path[512]; snprintf(path, sizeof path, "%s", pop.path);
     pop_close();
+    if (act == PA_SLEEP) { power_sleep(); return; }
+    if (act == PA_RESTART) { power_action("reboot"); return; }
+    if (act == PA_SHUTDOWN) { power_action("poweroff"); return; }
     if (act == PA_OPEN_FILE) { open_file(path); update_hover(); return; }
     if (act == PA_SET_WALL) {
         if (set_wallpaper_file(path)) { make_wallpaper(); repaint_all(); if (win_of(settings_draw) >= 0) st_repaint(); }
@@ -7221,7 +7266,9 @@ static void press(void) {
         if (i >= 0) { resize_start(i, e); return; }
     }
     switch (hot.type) {
-    case HOT_ORB:   set_menu(!menu_open); return;
+    case HOT_ORB:   if (set_dock) { finder_open(); return; } set_menu(!menu_open); return;
+    case HOT_DOCKBIN: run(BIN_CMD); return;
+    case HOT_DPOWER: dock_power_menu(); return;
     case HOT_SD:
         if (hot.a == 2) { set_menu(0); power_sleep(); return; }
         power_action(hot.a == 0 ? "poweroff" : "reboot"); return;
@@ -7494,6 +7541,7 @@ static int touchpad_event(int d, const struct input_event *v) {
 #include "record.c"               /* Record: the screen into a video */
 #include "camera.c"               /* Camera: the webcam */
 #include "menusearch.c"           /* type in the Start menu */
+#include "finder.c"               /* Finder: the Dock's first icon */
 #include "screenshot.c"           /* Print Screen and Win+Shift+S */
 #include "stickwait.c"            /* waiting for the USB boot stick before loading settings */
 int main(void) {
@@ -7514,7 +7562,7 @@ int main(void) {
     if (fbmem == MAP_FAILED) { perror("desktop: mmap"); return 1; }
     back = malloc((size_t)W * H * 4);
     wall = malloc((size_t)W * H * 4);
-    glowmap = malloc((size_t)W * H);
+
     np_lines = malloc(sizeof(int) * (NP_MAX + 2));
     if (pipe(wake_pipe) == 0) {                       /* background threads wake us up through this */
         fcntl(wake_pipe[0], F_SETFL, O_NONBLOCK); fcntl(wake_pipe[1], F_SETFL, O_NONBLOCK);
@@ -7563,7 +7611,6 @@ int main(void) {
         snprintf(pins[npins++], sizeof pins[0], "@terminal");
         snprintf(pins[npins++], sizeof pins[0], "@store");
     }
-    make_glowmap();
     make_wallpaper();
     mx = W / 2; my = H / 2;
     scan_devices();
@@ -7628,6 +7675,7 @@ int main(void) {
         { int o = toast_wait(); if (o >= 0 && o < wait_ms) wait_ms = o + 1; }
         { int o = rec_wait(); if (o >= 0 && o < wait_ms) wait_ms = o; }
         if ((ms_scanning || bgsync_again) && wait_ms > 100) wait_ms = 100;   /* waiting for a helper */
+        { int d = dock_tick(); if (d >= 0 && d < wait_ms) wait_ms = d; }
 
         int polled = poll(pfd, n, wait_ms);
         rec_tick();                                        /* Record: a picture of the screen */
@@ -7713,7 +7761,7 @@ int main(void) {
                         /* ccos's own keys, whatever app is active: Windows key, Print Screen, Win+Shift+S */
                         if (v->code == KEY_LEFTMETA || v->code == KEY_RIGHTMETA) {
                             if (v->value == 1) { meta_down = 1; meta_used = 0; }
-                            else if (v->value == 0) { meta_down = 0; if (!meta_used && !snip_on) set_menu(!menu_open); }
+                            else if (v->value == 0) { meta_down = 0; if (!meta_used && !snip_on) { if (set_dock) finder_open(); else set_menu(!menu_open); } }
                             continue;
                         }
                         if (v->code == KEY_SYSRQ) { if (v->value == 1 && !snip_on) shot_full(); continue; }
@@ -7824,6 +7872,7 @@ int main(void) {
                 wins[content_drag].drag(mx - cx, my - cy, cw, ch);
             }
             update_hover();
+            dock_motion();
         }
         static time_t last_tick;                          /* once-a-second app timers */
         time_t nowt = time(NULL);
