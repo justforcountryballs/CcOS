@@ -315,6 +315,7 @@ static void bg_sync(void) {
 }
 static void bg_sync_tick(void) { if (bgsync_again && !(bgsync_pid > 0 && kill(bgsync_pid, 0) == 0)) bg_sync(); }
 #include "asyncwrite.c"          /* saving without freezing */
+#include "watchdog.c"           /* notes down what a freeze was stuck in */
 #include "bin.c"                 /* the Recycle Bin */
 static void repaint_all(void);
 static void desk_bin_changed(void) {          /* the desktop Bin: empty or full */
@@ -7783,6 +7784,7 @@ static int qs_open_(void) { return qs.open; }
 #include "screenshot.c"           /* Print Screen and Win+Shift+S */
 #include "stickwait.c"            /* waiting for the USB boot stick before loading settings */
 int main(void) {
+    wd_start();
     int fb = open("/dev/fb0", O_RDWR);
     if (fb < 0) { perror("desktop: /dev/fb0"); return 1; }
     struct fb_var_screeninfo vi;
@@ -7917,7 +7919,9 @@ int main(void) {
         { int d = anim_tick(); if (d >= 0 && d < wait_ms) wait_ms = d; }
         { int d = hp_tick(); if (d >= 0 && d < wait_ms) wait_ms = d; }
 
+        wd_idle();
         int polled = poll(pfd, n, wait_ms);
+        wd_busy("timers");
         rec_tick();                                        /* Record: a picture of the screen */
         bg_sync_tick();
         ch_tick();
@@ -7926,12 +7930,13 @@ int main(void) {
         osd_wait();                                        /* hide the popup when its time is up */
         toast_wait();
         if (polled <= 0) {
-            scan_devices();
+            wd_at("checking devices"); scan_devices();
             time_t now = time(NULL);
             struct tm tm; localtime_r(&now, &tm);
             if (tm.tm_min != last_min) { last_min = tm.tm_min; repaint_clock(); if (clk_panel) clkp_repaint(); }
         }
 
+        wd_at("input and apps");
         int woke = 0;
         for (int k = napp; k < n; k++)
             if (pfd[k].revents & (POLLIN | POLLHUP | POLLERR)) { int i = -10 - map[k]; if (wins[i].open && wins[i].wake) wins[i].wake(); }
@@ -8137,8 +8142,9 @@ int main(void) {
         time_t nowt = time(NULL);
         if (nowt != last_tick) {
             last_tick = nowt;
-            cal_tick();                               /* Calendar reminders */
-            for (int i = 0; i < MAXWIN; i++) if (wins[i].open && wins[i].tick) wins[i].tick();
+            wd_at("calendar"); cal_tick();            /* Calendar reminders */
+            for (int i = 0; i < MAXWIN; i++) if (wins[i].open && wins[i].tick) { wd_at(wins[i].title ? wins[i].title : "window tick"); wins[i].tick(); }
+            wd_at("once a second");
             {   /* the USB stick's save file showed up after the desktop started */
                 static int was = -1;
                 check_persistent();
@@ -8151,6 +8157,7 @@ int main(void) {
             }
             {   /* apps installed or removed (Terminal, the store): refresh menu and desktop */
                 static struct timespec fp_mt; struct stat st;
+                wd_at("installed apps");
                 if (stat(FP_DIR, &st) == 0 && (st.st_mtim.tv_sec != fp_mt.tv_sec || st.st_mtim.tv_nsec != fp_mt.tv_nsec)) {
                     int first = fp_mt.tv_sec == 0 && fp_mt.tv_nsec == 0;
                     fp_mt = st.st_mtim;
@@ -8164,7 +8171,7 @@ int main(void) {
             update_poll();
             fileop_poll();
             static int drv_tick;
-            if (++drv_tick % 2 == 0) drives_poll();            /* USB drives plugged in or pulled out */
+            wd_at("USB drives"); if (++drv_tick % 2 == 0) drives_poll();            /* USB drives plugged in or pulled out */
             static int net_tick;
             if (net_fast > 0 || ++net_tick % 2 == 0) {
                 if (net_fast > 0) net_fast--;
@@ -8176,6 +8183,6 @@ int main(void) {
                 }
             }
         }
-        present();
+        wd_at("drawing"); present();
     }
 }

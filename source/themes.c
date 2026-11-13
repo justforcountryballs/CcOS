@@ -153,14 +153,15 @@ static void tm_job_done(int ok) {
     int kind = tm.job; tm.job = TJ_NONE;
     tm.jbuf[tm.jlen] = 0;
     if (kind == TJ_GTKLIST) {
-        tm.ngtk_avail = 0; tm.gtk_listed = 1;
+        tm.ngtk_avail = 0;
         for (char *l = strtok(tm.jbuf, "\n"); l && tm.ngtk_avail < 400; l = strtok(NULL, "\n")) {
             char *p = strstr(l, "org.gtk.Gtk3theme."); if (!p) continue;
             p += 18; p[strcspn(p, " \t\r")] = 0;
             int dup = 0; for (int i = 0; i < tm.ngtk_avail; i++) if (!strcmp(tm.gtk_avail[i], p)) dup = 1;
             if (!dup && strlen(p) < 48) snprintf(tm.gtk_avail[tm.ngtk_avail++], 48, "%s", p);
         }
-        snprintf(tm.msg, sizeof tm.msg, tm.ngtk_avail ? "" : "Couldn't get the list from Flathub (no internet?).");
+        tm.gtk_listed = tm.ngtk_avail > 0;            /* nothing came back: keep the button to try again */
+        snprintf(tm.msg, sizeof tm.msg, tm.ngtk_avail ? "" : "Couldn't get the list from Flathub. Check the internet and click Try again.");
     } else if (kind == TJ_GTKINSTALL) {
         tm_scan_gtk_installed();
         int have = 0; for (int i = 0; i < tm.ngtk_inst; i++) if (!strcmp(tm.gtk_inst[i], tm.jarg)) have = 1;
@@ -203,13 +204,13 @@ static void tm_wake(void) {
 }
 static void tm_get_gtk_list(void) {
     snprintf(tm.msg, sizeof tm.msg, "Getting the list from Flathub...");
-    tm_job(TJ_GTKLIST, NULL, "flatpak remote-ls --columns=application flathub 2>/dev/null | grep '^org.gtk.Gtk3theme\\.' | sort -u");
+    tm_job(TJ_GTKLIST, NULL, "ccos-fp flatpak remote-ls --columns=application flathub 2>/dev/null | grep '^org.gtk.Gtk3theme\\.' | sort -u");
 }
 static void tm_install_gtk(const char *name) {
     for (const char *p = name; *p; p++) if (!isalnum((unsigned char)*p) && *p != '-' && *p != '_' && *p != '.') return;
     char cmd[1200];
     snprintf(cmd, sizeof cmd,
-        "flatpak install -y --noninteractive flathub org.gtk.Gtk3theme.%s >/dev/null 2>&1; "
+        "ccos-fp flatpak install -y --noninteractive flathub org.gtk.Gtk3theme.%s >/dev/null 2>&1; "
         "L=$(flatpak info --show-location org.gtk.Gtk3theme.%s 2>/dev/null) && [ -d \"$L/files\" ] && "
         "mkdir -p '%s/.themes/%s/gtk-3.0' && cp -r \"$L/files/.\" '%s/.themes/%s/gtk-3.0/'",
         name, name, tm_home(), name, tm_home(), name);
@@ -393,7 +394,7 @@ static void themes_draw(int cx, int cy, int cw, int ch) {
         int ly = y + ((tm.ngtk_inst + 2 + 3) / 4) * 44 + 16;
         draw_text_bold(X, ly, "Get app themes from Flathub", tm_fg);
         if (!tm.gtk_listed) {
-            tm_pill(X, ly + 26, 200, 34, tm.job == TJ_GTKLIST ? "Looking..." : "Show themes", 0, hv == 200);
+            tm_pill(X, ly + 26, 200, 34, tm.job == TJ_GTKLIST ? "Looking..." : tm.msg[0] == 'C' ? "Try again" : "Show themes", 0, hv == 200);
             break;
         }
         clip_y0 = imax(clip_y0, cy + ly - Y + 18 + 22); clip_y1 = imin(clip_y1, cy + ch - (tm.msg[0] ? 44 : 4));

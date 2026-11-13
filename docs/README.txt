@@ -142,6 +142,9 @@ Desktop controls:
                                      screenshots now save in the background,
                                      so a slow USB stick no longer freezes
                                      the desktop while it writes.
+                                     If ccos still freezes for a second or more,
+                                     it writes down what it was waiting for in
+                                     D:\ccos-freeze-log.txt (handy for bug reports).
   Start menu search                  open the start menu and just type: apps,
                                      Settings pages ("wifi", "time", "dark")
                                      and files/folders on D: and in Downloads.
