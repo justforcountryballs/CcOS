@@ -17,7 +17,7 @@
  * taskbar) is kept in memory, and only the areas that actually change are
  * redrawn and copied to the screen.
  *
- * Build: gcc -O2 -static -o desktop desktop.c -lm
+ * Build: gcc -O2 -o desktop desktop.c -lm -lwayland-server -lxkbcommon -lz
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -31,6 +31,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -64,7 +65,7 @@
 
 /* ---- icons ---------------------------------------------------------- */
 enum { ICON_NONE, ICON_GEAR, ICON_CALC, ICON_NOTE, ICON_MINE, ICON_FOLDER, ICON_FILE, ICON_DRIVE, ICON_COMPUTER, ICON_GLOBE, ICON_TERMINAL, ICON_APP, ICON_CARDS, ICON_BAG, ICON_PHOTO, ICON_VIDEO, ICON_MUSIC,
-       ICON_FOLDER_IMG, ICON_FOLDER_DL, ICON_FOLDER_VID, ICON_USB, ICON_BATTERY, ICON_MOON, ICON_SUN, ICON_PRINTER, ICON_ZIP };   /* coloured folders: Images, Downloads, Videos */
+       ICON_FOLDER_IMG, ICON_FOLDER_DL, ICON_FOLDER_VID, ICON_USB, ICON_BATTERY, ICON_MOON, ICON_SUN, ICON_PRINTER, ICON_ZIP, ICON_BIN, ICON_BIN_FULL, ICON_CAMERA, ICON_RECORD, ICON_SEARCH };   /* coloured folders: Images, Downloads, Videos */
 #define ICON_IMG 1000              /* ICON_IMG + n: an app's own picture (Flathub apps) */
 
 /* ===================================================================
@@ -77,7 +78,7 @@ enum { ICON_NONE, ICON_GEAR, ICON_CALC, ICON_NOTE, ICON_MINE, ICON_FOLDER, ICON_
 typedef struct { const char *label; const char *cmd; int icon; } MenuItem;
 
 #define FP_MENU 5                  /* Flatpak apps shown in the start menu */
-#define NBUILTIN 11                /* built-in programs in the start menu */
+#define NBUILTIN 13                /* built-in programs in the start menu */
 static MenuItem left_items[NBUILTIN + FP_MENU + 1] = {   /* white panel (programs); Flatpak apps are added after these */
     { "Terminal", "@terminal", ICON_TERMINAL },
     { "File Explorer", "@explorer", ICON_FOLDER },
@@ -88,6 +89,8 @@ static MenuItem left_items[NBUILTIN + FP_MENU + 1] = {   /* white panel (program
     { "Photos", "@photos", ICON_PHOTO },
     { "Videos", "@videos", ICON_VIDEO },
     { "Music", "@music", ICON_MUSIC },
+    { "Camera", "@camera", ICON_CAMERA },
+    { "Record", "@record", ICON_RECORD },
     { "Software Manager", "@store", ICON_BAG },
     { "Settings", "@settings", ICON_GEAR },
     { NULL, NULL, 0 }
@@ -134,6 +137,34 @@ static const Wallpaper wallpapers[] = {
 /* ---- settings (saved to /data/ccos.conf) ---------------------------- */
 #define CONF_PATH "/data/ccos.conf"
 static int stick_wait;              /* the "needs to find your USB boot stick" screen is up */
+static int rec_on(void);            /* Record: the screen is being recorded (record.c) */
+static int rec_tb_x(void);
+static void rec_draw_tb(void);
+static void rec_stop(void);
+static void rec_toggle(void);
+#define REC_TB_W 86
+#define REC_W 300
+#define REC_H 214
+static void rec_draw(int cx, int cy, int cw, int ch);
+static void rec_click(int lx, int ly, int cw, int ch);
+static int rec_hit(int lx, int ly, int cw, int ch);
+static void rec_app_tick(void);
+#define CAM_W 720
+#define CAM_H 470
+static void cam_draw(int cx, int cy, int cw, int ch);
+static void cam_click(int lx, int ly, int cw, int ch);
+static int cam_hit(int lx, int ly, int cw, int ch);
+static void cam_key(int code, int mods);
+static void cam_tick(void);
+static int cam_on_close(void);
+static int cam_fd(void);
+static void cam_wake(void);
+static void cam_start(void);
+static int snip_on;                 /* Win+Shift+S: picking a part of the screen */
+static int meta_down, meta_used;    /* the Windows key: held / used with another key */
+static void snip_button(int down);
+static void snip_render(int x0, int y0, int x1, int y1);
+static void snip_motion(void);
 static void stick_wait_click(void);
 static int set_wall = 0;      /* index into wallpapers[] */
 static int set_clock24 = 1;   /* 1 = 24-hour (military) time */
@@ -156,6 +187,8 @@ static int set_tz_auto = 1;      /* find the time zone from the internet connect
 static int set_ntp = 1;          /* set the clock from the internet */
 static char set_upd_repo[96] = "justforcountryballs/CcOS";
 static char set_upd_api[200];                 /* testing: another server instead of api.github.com */
+static int set_rec_sound = 1;     /* Record: with the sound apps make */
+static int set_bin_icon;         /* the Recycle Bin got its desktop icon (once; delete it and it stays away) */
 static int set_upd_auto = 1;                  /* look once a day */
 static long long set_upd_last;                /* when we last looked (time_t) */
 static int set_rtc_local = 1;    /* hardware clock in local time, like Windows */
@@ -186,6 +219,7 @@ static const AppInfo apps[] = {
     { "@terminal", "Terminal", ICON_TERMINAL }, { "@solitaire", "Solitaire", ICON_CARDS },
     { "@store", "Software Manager", ICON_BAG },
     { "@photos", "Photos", ICON_PHOTO }, { "@videos", "Videos", ICON_VIDEO }, { "@music", "Music", ICON_MUSIC },
+    { "@camera", "Camera", ICON_CAMERA }, { "@record", "Record", ICON_RECORD },
 };
 /* ---- apps installed with Flatpak (from Flathub) -------------------
  * Flatpak puts a .desktop file for each one in its "exports" folder;
@@ -260,8 +294,20 @@ static const AppInfo *app_info(const char *cmd);
 static int desk_icon_for(const char *cmd) {
     if (!strncmp(cmd, "@explorer ", 10)) return ICON_FOLDER;
     if (!strcmp(cmd, "@explorer")) return ICON_COMPUTER;
+    if (!strcmp(cmd, "@explorer /data/.bin")) return ICON_BIN;
     const AppInfo *ai = app_info(cmd);
     return ai ? ai->icon : ICON_APP;
+}
+#define BIN_CMD "@explorer /data/.bin"
+static void pretty_path(const char *p, char *out, size_t n);
+#include "bin.c"                 /* the Recycle Bin */
+static void repaint_all(void);
+static void desk_bin_changed(void) {          /* the desktop Bin: empty or full */
+    for (int i = 0; i < ndesk; i++)
+        if (!strcmp(desk_icons[i].cmd, BIN_CMD)) {
+            int ic = bin_count() ? ICON_BIN_FULL : ICON_BIN;
+            if (desk_icons[i].icon != ic) { desk_icons[i].icon = ic; repaint_all(); }
+        }
 }
 static int desk_find(const char *cmd) {
     for (int i = 0; i < ndesk; i++) if (!strcmp(desk_icons[i].cmd, cmd)) return i;
@@ -353,7 +399,7 @@ static int pin_index(const char *cmd) {
 #define TASKBAR_H  40
 #define ORB_R      17
 #define MENU_W     400
-#define MENU_H     604
+#define MENU_H     680
 #define ITEM_H     32
 #define CLOCK_W    100
 #define FRAME      (set_style ? 1 : 8)   /* window side/bottom border (Modern: a thin line) */
@@ -958,8 +1004,16 @@ static void draw_icon_inner(int icon, int cx, int cy, int r) {
     }
     draw_icon_raw(icon, cx, cy, r);
 }
+static void draw_bin_icon(int cx, int cy, int r, int full);
+static void draw_camera_icon(int cx, int cy, int r);
+static void draw_record_icon(int cx, int cy, int r);
+static void draw_search_icon(int cx, int cy, int r);
 static void draw_icon_raw(int icon, int cx, int cy, int r) {
     if (icon >= ICON_IMG) draw_img_icon(icon - ICON_IMG, cx, cy, r);
+    else if (icon == ICON_BIN || icon == ICON_BIN_FULL) draw_bin_icon(cx, cy, r, icon == ICON_BIN_FULL);
+    else if (icon == ICON_CAMERA) draw_camera_icon(cx, cy, r);
+    else if (icon == ICON_RECORD) draw_record_icon(cx, cy, r);
+    else if (icon == ICON_SEARCH) draw_search_icon(cx, cy, r);
     else if (icon == ICON_GLOBE) draw_globe_icon(cx, cy, r);
     else if (icon == ICON_FOLDER) draw_folder_icon(cx, cy, r);
     else if (icon == ICON_FILE) draw_file_icon(cx, cy, r);
@@ -1111,6 +1165,8 @@ static void load_settings(void) {
         if (sscanf(line, "tzauto=%d", &v) == 1) set_tz_auto = !!v;
         if (sscanf(line, "ntp=%d", &v) == 1) set_ntp = !!v;
         if (sscanf(line, "upd_auto=%d", &v) == 1) set_upd_auto = !!v;
+        if (sscanf(line, "binicon=%d", &v) == 1) set_bin_icon = !!v;
+        if (sscanf(line, "recsound=%d", &v) == 1) set_rec_sound = !!v;
         if (!strncmp(line, "upd_last=", 9)) set_upd_last = atoll(line + 9);
         if (!strncmp(line, "upd_repo=", 9)) { snprintf(set_upd_repo, sizeof set_upd_repo, "%s", line + 9); set_upd_repo[strcspn(set_upd_repo, "\r\n")] = 0; }
         if (!strncmp(line, "upd_api=", 8)) { snprintf(set_upd_api, sizeof set_upd_api, "%s", line + 8); set_upd_api[strcspn(set_upd_api, "\r\n")] = 0; }
@@ -1167,7 +1223,7 @@ static void save_settings(void) {
     fprintf(f, "bright=%d\nscreenoff=%d\nsleepafter=%d\nlid=%d\n", set_bright, set_off_idx, set_sleep_idx, set_lid);
     fprintf(f, "notifysound=%d\ngpu=%d\nkbd=%d\n", set_notify_sound, set_gpu, set_kbd);
     fprintf(f, "tz=%s\ntzauto=%d\nntp=%d\nrtclocal=%d\n", set_tz, set_tz_auto, set_ntp, set_rtc_local);
-    fprintf(f, "upd_auto=%d\nupd_last=%lld\nupd_repo=%s\n", set_upd_auto, set_upd_last, set_upd_repo);
+    fprintf(f, "upd_auto=%d\nupd_last=%lld\nupd_repo=%s\nbinicon=%d\nrecsound=%d\n", set_upd_auto, set_upd_last, set_upd_repo, set_bin_icon, set_rec_sound);
     if (set_upd_api[0]) fprintf(f, "upd_api=%s\n", set_upd_api);
     for (int i = 0; i < NDESK; i++) fprintf(f, "desk=%d,%d,%s|%s\n", desk_icons[i].col, desk_icons[i].row, desk_icons[i].cmd, desk_icons[i].label);
     fprintf(f, "fpknown=%s\nstoreicon=1\n", fp_known);
@@ -1256,7 +1312,7 @@ static int content_drag = -1;          /* window whose content is being dragged 
 static long long last_click_ms; static int last_click_win = -1;
 
 /* what the mouse is pointing at ("hot"), so it can be highlighted */
-enum { HOT_NONE, HOT_ORB, HOT_SD, HOT_LITEM, HOT_RITEM, HOT_CAP, HOT_TASK, HOT_CONTENT, HOT_ICON, HOT_POPUP, HOT_TRAY, HOT_NETP, HOT_BAT, HOT_CLOCK, HOT_CLKP };
+enum { HOT_NONE, HOT_ORB, HOT_SD, HOT_LITEM, HOT_RITEM, HOT_CAP, HOT_TASK, HOT_CONTENT, HOT_ICON, HOT_POPUP, HOT_TRAY, HOT_NETP, HOT_BAT, HOT_CLOCK, HOT_CLKP, HOT_SRES, HOT_SBOX, HOT_REC };
 typedef struct { int type, a, b; } Hot;
 static Hot hot;
 
@@ -1279,6 +1335,14 @@ static int in_menu(void) {
 #define LI_W (LP_W - 8)
 #define ITEMS_Y (LP_Y + 6)
 #define SD_Y (menu_y() + MENU_H - 37)   /* power buttons along the bottom */
+#define MS_BOX_H 28                     /* the Start menu's search box (menusearch.c) */
+#define MS_BOX_Y (LP_Y + LP_H - MS_BOX_H - 8)
+static int ms_n, ms_sel;
+static int ms_active(void);
+static void ms_rows(int *n);
+static void ms_draw(void);
+static void msr_open(int i);
+static void menu_search_key(int code, int mods);
 #define SD_H 26
 #define NPOWER 3
 static const char *power_label[NPOWER] = { "Shut down", "Restart", "Sleep" };
@@ -1343,7 +1407,7 @@ static int di_at_mouse(void) {
 #define POP_W 264
 #define POP_IH 26
 enum { PA_NONE, PA_OPEN, PA_PIN, PA_UNPIN, PA_CLOSE, PA_DESK_ADD, PA_DESK_DEL, PA_OPEN_FILE, PA_SET_WALL, PA_CUSTOMIZE, PA_EJECT, PA_PRINT,
-       PA_CUT, PA_COPY, PA_PASTE, PA_RENAME, PA_DELETE, PA_ZIP, PA_UNZIP, PA_NEWFOLDER, PA_SELALL,
+       PA_CUT, PA_COPY, PA_PASTE, PA_RENAME, PA_DELETE, PA_ZIP, PA_UNZIP, PA_NEWFOLDER, PA_SELALL, PA_RESTORE, PA_RESTOREALL, PA_EMPTYBIN,
        PA_NEWMENU, PA_NEWFILE /* .. PA_NEWFILE + 7: File Explorer's New > list */ };
 #define POP_SUBMAX 8
 #define SUB_W 236
@@ -2138,6 +2202,12 @@ static Hot find_hot(void) {
             int x, y, w, hh; power_rect(i, &x, &y, &w, &hh);
             if (in_rect(x, y, w, hh)) { h.type = HOT_SD; h.a = i; return h; }
         }
+        if (in_rect(LI_X, MS_BOX_Y, LI_W, MS_BOX_H)) { h.type = HOT_SBOX; return h; }
+        if (ms_active()) {                                   /* search results instead of the programs */
+            int rows; ms_rows(&rows);
+            for (int i = 0; i < ms_n && i < rows; i++)
+                if (in_rect(LI_X, ITEMS_Y + i * ITEM_H, LI_W, ITEM_H)) { h.type = HOT_SRES; h.a = i; return h; }
+        } else
         for (int i = 0; left_items[i].label; i++)
             if (in_rect(LI_X, ITEMS_Y + i * ITEM_H, LI_W, ITEM_H)) { h.type = HOT_LITEM; h.a = i; return h; }
         for (int i = 0; right_items[i].label; i++)
@@ -2150,6 +2220,7 @@ static Hot find_hot(void) {
     if (ON_TASKBAR && in_rect(W - CLOCK_W - 8, H - TASKBAR_H + 3, CLOCK_W + 6, TASKBAR_H - 6)) {
         h.type = HOT_CLOCK; return h;
     }
+    if (ON_TASKBAR && rec_on() && in_rect(rec_tb_x(), H - TASKBAR_H + 3, REC_TB_W, TASKBAR_H - 6)) { h.type = HOT_REC; return h; }
     if (ON_TASKBAR && bat.present && in_rect(bat_x(), H - TASKBAR_H + 3, BAT_W, TASKBAR_H - 6)) {
         h.type = HOT_BAT; return h;
     }
@@ -2318,6 +2389,7 @@ static void draw_taskbar(void) {
     draw_orb();
     draw_task_buttons();
     draw_clock();
+    rec_draw_tb();
     /* network icon in the tray */
     int tx = tray_x(), ty = H - TASKBAR_H + 3;
     if (net_panel || hot.type == HOT_TRAY) {
@@ -2369,6 +2441,7 @@ static void draw_menu(void) {
         fill_round(LP_X, LP_Y, LP_W, LP_H, 6, T->menu_left, 255);
         stroke_round(LP_X, LP_Y, LP_W, LP_H, 6, T->menu_line, 255);
         draw_items(left_items, LI_X, LI_W, 0, HOT_LITEM);
+        ms_draw();
         draw_items(right_items, RP_X, RP_W, 1, HOT_RITEM);
         for (int i = 0; i < NPOWER; i++) {
             int bx, by, bw, bh; power_rect(i, &bx, &by, &bw, &bh);
@@ -2388,6 +2461,7 @@ static void draw_menu(void) {
     fill_round(LP_X, LP_Y, LP_W, LP_H, 4, RGB(255, 255, 255), 250);
     stroke_round(LP_X, LP_Y, LP_W, LP_H, 4, RGB(0x2c, 0x4a, 0x6a), 220);
     draw_items(left_items, LI_X, LI_W, 0, HOT_LITEM);
+    ms_draw();
     draw_items(right_items, RP_X, RP_W, 1, HOT_RITEM);
 
     for (int i = 0; i < NPOWER; i++) {                     /* Shut down / Restart */
@@ -3691,14 +3765,26 @@ static void draw_desk_icons(void) {
 
 /* repaint one area of the scene: wallpaper, windows, menu, taskbar */
 static void wl_draw_popups(void);
+static int wl_covers(int win, int x0, int y0, int x1, int y1);
 static void repaint(int x, int y, int w, int h) {
     clip_x0 = imax(x, 0); clip_y0 = imax(y, 0);
     clip_x1 = imin(x + w, W); clip_y1 = imin(y + h, H);
     if (clip_x0 >= clip_x1 || clip_y0 >= clip_y1) return;
-    for (int j = clip_y0; j < clip_y1; j++)
-        memcpy(&back[j * W + clip_x0], &wall[j * W + clip_x0], (size_t)(clip_x1 - clip_x0) * 4);
-    draw_desk_icons();
-    for (int k = 0; k < nz; k++) draw_window(zorder[k]);
+    if (snip_on) { snip_render(clip_x0, clip_y0, clip_x1, clip_y1); return; }   /* the screen is frozen meanwhile */
+    /* an app window that hides this whole spot: start from it (nothing under it shows) */
+    int from = -1;
+    for (int k = nz - 1; k >= 0; k--) {
+        int wi = zorder[k];
+        if (!wins[wi].open || wins[wi].minimized) continue;
+        if (wl_covers(wi, clip_x0, clip_y0, clip_x1, clip_y1)) { from = k; break; }
+    }
+    if (from < 0) {
+        for (int j = clip_y0; j < clip_y1; j++)
+            memcpy(&back[j * W + clip_x0], &wall[j * W + clip_x0], (size_t)(clip_x1 - clip_x0) * 4);
+        draw_desk_icons();
+        from = 0;
+    }
+    for (int k = from; k < nz; k++) draw_window(zorder[k]);
     wl_draw_popups();                                       /* menus of Wayland apps */
     if (menu_open) draw_menu();
     if (!taskbar_hidden()) draw_taskbar();
@@ -3801,6 +3887,7 @@ static void repaint_hot(Hot h) {
     case HOT_ORB:   repaint(orb_cx() - ORB_R - 2, orb_cy() - ORB_R - 2, 2 * ORB_R + 5, 2 * ORB_R + 5); break;
     case HOT_SD:    power_rect(h.a, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
     case HOT_LITEM: repaint(LI_X, ITEMS_Y + h.a * ITEM_H, LI_W, ITEM_H); break;
+    case HOT_SRES: repaint(LI_X, ITEMS_Y + h.a * ITEM_H, LI_W, ITEM_H); if (h.a != ms_sel) repaint(LI_X, ITEMS_Y + ms_sel * ITEM_H, LI_W, ITEM_H); break;
     case HOT_RITEM: repaint(RP_X, ITEMS_Y + h.a * ITEM_H, RP_W, ITEM_H); break;
     case HOT_CAP:   cap_rect(&wins[h.a], h.b, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
     case HOT_TASK:  task_rect(h.a, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
@@ -3810,6 +3897,7 @@ static void repaint_hot(Hot h) {
         pop_item_rect(h.a, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
     case HOT_TRAY:  repaint(tray_x(), H - TASKBAR_H, TRAY_W, TASKBAR_H); break;
     case HOT_BAT:   repaint(bat_x(), H - TASKBAR_H, BAT_W, TASKBAR_H); break;
+    case HOT_REC:   repaint_taskbar(); break;
     case HOT_CLOCK: repaint_clock(); break;
     case HOT_CLKP:  clkp_repaint(); break;
     case HOT_NETP:
@@ -5222,7 +5310,7 @@ static long long ex_sig;                        /* to notice changes on disk */
 static long long ex_last_click; static int ex_last_idx = -1;
 static Dialog ex_dlg;
 static int ex_dlg_mode;
-enum { EXD_NEWFOLDER = 1, EXD_RENAME, EXD_DELETE, EXD_INFO, EXD_NEWFILE };
+enum { EXD_NEWFOLDER = 1, EXD_RENAME, EXD_DELETE, EXD_INFO, EXD_NEWFILE, EXD_EMPTYBIN };
 /* right-click > New: the kinds of empty file ccos can make */
 static const struct { const char *label, *name, *body; int len, icon, exec; } ex_newt[] = {
     { "Text Document", "New Text Document.txt", "", 0, ICON_NOTE, 0 },
@@ -5242,20 +5330,21 @@ void ex_dlg_done(int b);
 #define MAXRD 8
 static struct { char dev[16], name[40], mnt[128], fs[12]; int ours, ro; } rdrv[MAXRD];
 static int nrd;
-static struct { const char *label, *path; int icon, indent; } ex_nav[7 + MAXRD] = {
+static struct { const char *label, *path; int icon, indent; } ex_nav[8 + MAXRD] = {
     { "Documents", "/data/Documents", ICON_FOLDER, 0 },
     { "Images", "/data/Images", ICON_FOLDER_IMG, 0 },
     { "Downloads", "/apps/home/Downloads", ICON_FOLDER_DL, 0 },
     { "Videos", "/data/Videos", ICON_FOLDER_VID, 0 },
+    { "Recycle Bin", "/data/.bin", ICON_BIN, 0 },
     { "Computer", "", ICON_COMPUTER, 0 },
     { "ccos System (C:)", "/", ICON_DRIVE, 1 },
     { "ccos Data (D:)", "/data", ICON_DRIVE, 1 },
 };
-static int ex_nnav = 7;
+static int ex_nnav = 8;
 #define EX_NNAV ex_nnav
 static void ex_nav_rebuild(void) {               /* the USB drives under Computer */
-    ex_nnav = 7;
-    for (int i = 0; i < nrd && ex_nnav < 7 + MAXRD; i++) {
+    ex_nnav = 8;
+    for (int i = 0; i < nrd && ex_nnav < 8 + MAXRD; i++) {
         ex_nav[ex_nnav].label = rdrv[i].name; ex_nav[ex_nnav].path = rdrv[i].mnt;
         ex_nav[ex_nnav].icon = ICON_USB; ex_nav[ex_nnav].indent = 1; ex_nnav++;
     }
@@ -5455,8 +5544,10 @@ static int ex_is_text(const char *path, long long size) {
 }
 
 static int ex_is_zip(const char *name);
+static int ex_is_archive(const char *name);
 static const char *ex_type(const ExItem *it) {
     if (!it->dir && ex_is_zip(it->name)) return "Zip archive";
+    if (!it->dir && ex_is_archive(it->name)) return "Archive";
     if (!it->dir && is_launcher(it->name)) return "Application";
     if (!it->dir && is_ccupd(it->name)) return "ccos Update";
     static char t[32];
@@ -5516,6 +5607,7 @@ static void ex_set_title(void) {
     if (!ex_path[0]) snprintf(ex_title, sizeof ex_title, "Computer");
     else if (!strcmp(ex_path, "/")) snprintf(ex_title, sizeof ex_title, "ccos System (C:)");
     else if (!strcmp(ex_path, "/data")) snprintf(ex_title, sizeof ex_title, "ccos Data (D:)");
+    else if (!strcmp(ex_path, BIN_DIR)) snprintf(ex_title, sizeof ex_title, "Recycle Bin");
     else if (rd_of_path(ex_path) >= 0 && !strcmp(ex_path, rdrv[rd_of_path(ex_path)].mnt)) snprintf(ex_title, sizeof ex_title, "%s", rdrv[rd_of_path(ex_path)].name);
     else snprintf(ex_title, sizeof ex_title, "%s", strrchr(ex_path, '/') + 1);
     int i = win_of(explorer_draw);
@@ -5536,7 +5628,7 @@ static void ex_go(const char *path, int remember) {
 }
 
 static void ex_parent(char *out, size_t n) {
-    if (!strcmp(ex_path, "/") || !strcmp(ex_path, "/data") || !ex_path[0]) { out[0] = 0; return; }
+    if (!strcmp(ex_path, "/") || !strcmp(ex_path, "/data") || !ex_path[0] || !strncmp(ex_path, BIN_DIR, strlen(BIN_DIR))) { out[0] = 0; return; }
     { int r = rd_of_path(ex_path); if (r >= 0 && !strcmp(ex_path, rdrv[r].mnt)) { out[0] = 0; return; } }
     snprintf(out, n, "%s", ex_path);
     char *s = strrchr(out, '/');
@@ -5556,13 +5648,20 @@ static void ex_main(int cw, int ch, int *x, int *y, int *w, int *h) {
 }
 static int ex_rows(int cw, int ch) { int x, y, w, h; ex_main(cw, ch, &x, &y, &w, &h); return imax(1, (h - EX_HDR_H) / EX_ROW_H); }
 #define EX_NCMD 6
+static int ex_in_bin(void) { return !strcmp(ex_path, BIN_DIR); }
+static const char *ex_cmd_labels[2][6] = {
+    { "New folder", "Cut", "Copy", "Paste", "Rename", "Delete" },
+    { "Restore", "Restore all", "Empty Recycle Bin", "", "", "Delete" },      /* in the Recycle Bin */
+};
+#define ex_cmd_label ex_cmd_labels[ex_in_bin()]
 static void ex_cmd_rect(int i, int *x, int *y, int *w, int *h) {
-    static const int xs[] = { 8, 112, 158, 210, 268, 342 }, ws[] = { 100, 42, 48, 54, 70, 66 };
-    *x = xs[i]; *y = EX_NAV_H + 3; *w = ws[i]; *h = EX_CMD_H - 6;
+    int xx = 8;
+    for (int k = 0; k < i; k++) if (ex_cmd_label[k][0]) xx += text_w(ex_cmd_label[k]) + 22 + 4;
+    *x = xx; *y = EX_NAV_H + 3; *w = ex_cmd_label[i][0] ? text_w(ex_cmd_label[i]) + 22 : 0; *h = EX_CMD_H - 6;
 }
-static const char *ex_cmd_label[] = { "New folder", "Cut", "Copy", "Paste", "Rename", "Delete" };
 static int ex_cmd_enabled(int i) {
     int ns = ex_path[0] ? ex_nselected() : 0;
+    if (ex_in_bin()) return i == 0 || i == 5 ? ns > 0 : (i == 1 || i == 2) ? ex_n > 0 : 0;
     switch (i) {
     case 0: return ex_writable();
     case 1: return ex_writable() && ns > 0;
@@ -5586,6 +5685,10 @@ static int ex_crumbs(char labels[][40], char paths[][256]) {
     int n = 0;
     snprintf(labels[n], 40, "Computer"); paths[n][0] = 0; n++;
     if (!ex_path[0]) return n;
+    if (!strncmp(ex_path, BIN_DIR, strlen(BIN_DIR))) {                 /* the Bin is its own place */
+        n = 0; snprintf(labels[n], 40, "Recycle Bin"); snprintf(paths[n], 256, BIN_DIR); n++;
+        return n;
+    }
     int u = rd_of_path(ex_path);
     int d = u < 0 && ex_on_d(ex_path);
     if (!strncmp(ex_path, "/apps/home/Downloads", 20)) d = 0;   /* that one lives on C: */
@@ -5687,6 +5790,73 @@ static void draw_moon_icon(int cx, int cy, int r) {
         }
 }
 /* a zip file: a folder with a zipper down the middle */
+/* a glass waste basket; full: crumpled paper in it */
+static void draw_bin_icon(int cx, int cy, int r, int full) {
+    float top = cy - r * 0.62f, bot = cy + r * 0.92f, wt = r * 0.78f, wb = r * 0.56f;
+    int x0 = cx - r - 1, y0 = cy - r - 2, x1 = cx + r + 2, y1 = cy + r + 2;
+    if (!clip_range(&x0, &y0, &x1, &y1)) return;
+    if (full) {                                                      /* paper first, behind the front glass */
+        fill_circle(cx - r * 0.28f, top - r * 0.08f, r * 0.34f, RGB(0xf4, 0xf4, 0xf0), 255);
+        fill_circle(cx + r * 0.22f, top - r * 0.16f, r * 0.30f, RGB(0xe4, 0xec, 0xf6), 255);
+        fill_circle(cx + r * 0.02f, top + r * 0.10f, r * 0.30f, RGB(0xfa, 0xfa, 0xf6), 255);
+        aa_line(cx - r * 0.45f, top - r * 0.05f, cx - r * 0.12f, top - r * 0.22f, 1.0f, RGB(0xb8, 0xb8, 0xb0));
+        aa_line(cx + r * 0.05f, top - r * 0.3f, cx + r * 0.38f, top - r * 0.05f, 1.0f, RGB(0xa8, 0xb4, 0xc4));
+    }
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++) {
+            float px = x + 0.5f - cx, py = y + 0.5f;
+            if (py < top || py > bot) continue;
+            float k = (py - top) / (bot - top), hw = wt + (wb - wt) * k;
+            float cov = clampf(hw + 0.5f - fabsf(px), 0, 1) * clampf(bot + 0.5f - py, 0, 1);
+            if (cov <= 0) continue;
+            float u = (px / hw + 1) / 2;                              /* 0 left .. 1 right */
+            uint32_t c = mix(RGB(0xd4, 0xe4, 0xf2), RGB(0x6c, 0x88, 0xa8), u * 0.8f + k * 0.2f);
+            int a = 150;
+            float rib = fmodf(u * 7.0f, 1.0f);
+            if (rib < 0.12f) { c = mix(c, RGB(0x50, 0x68, 0x88), 0.5f); a = 200; }
+            if (u < 0.28f && u > 0.14f) { c = mix(c, RGB(255, 255, 255), 0.5f); a = 190; }   /* shine */
+            if (hw - fabsf(px) < 1.2f || bot - py < 1.4f) { c = RGB(0x4c, 0x60, 0x7c); a = 230; }
+            blend(x, y, c, (int)(a * cov));
+        }
+    /* the rim */
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++) {
+            float dx = (x + 0.5f - cx) / (wt + 1), dy = (y + 0.5f - top) / (r * 0.16f);
+            float d = sqrtf(dx * dx + dy * dy);
+            if (d > 1.05f || d < 0.78f) continue;
+            blend(x, y, d > 0.9f ? RGB(0x4c, 0x60, 0x7c) : RGB(0xee, 0xf4, 0xfa), 220);
+        }
+}
+/* a webcam: dark body, glass lens */
+static void draw_camera_icon(int cx, int cy, int r) {
+    fill_round(cx - r, cy - r * 2 / 3, 2 * r, r * 4 / 3 + 1, imax(2, r / 4), RGB(0x2c, 0x30, 0x38), 255);
+    fill_round(cx - r * 2 / 3, cy - r * 2 / 3 - imax(2, r / 5), r / 2, imax(2, r / 5) + 1, 1, RGB(0x2c, 0x30, 0x38), 255);
+    fill_circle(cx, cy + 1, r * 0.56f, RGB(0x9c, 0xa4, 0xb0), 255);
+    fill_circle(cx, cy + 1, r * 0.44f, RGB(0x10, 0x18, 0x30), 255);
+    fill_circle(cx, cy + 1, r * 0.28f, RGB(0x24, 0x48, 0x90), 255);
+    fill_circle(cx - r * 0.12f, cy - r * 0.1f, r * 0.1f, RGB(0xd0, 0xe0, 0xff), 230);
+    fill_circle(cx + r * 0.7f, cy - r * 0.4f, r * 0.1f, RGB(0xff, 0xc8, 0x40), 255);
+}
+/* screen recording: a screen with a red dot */
+static void draw_record_icon(int cx, int cy, int r) {
+    fill_round(cx - r, cy - r * 3 / 4, 2 * r, r * 5 / 4, imax(1, r / 6), RGB(0x30, 0x3c, 0x50), 255);
+    fill_round(cx - r + 2, cy - r * 3 / 4 + 2, 2 * r - 4, r * 5 / 4 - 4, 1, RGB(0x1c, 0x60, 0xa8), 255);
+    fill_rect(cx - r / 4, cy + r / 2, r / 2, r / 3, RGB(0x30, 0x3c, 0x50), 255);
+    fill_rect(cx - r / 2, cy + r * 3 / 4, r, imax(2, r / 6), RGB(0x30, 0x3c, 0x50), 255);
+    fill_circle(cx, cy - r / 8, r * 0.36f, RGB(0xff, 0xff, 0xff), 255);
+    fill_circle(cx, cy - r / 8, r * 0.28f, RGB(0xe0, 0x24, 0x24), 255);
+}
+/* a magnifying glass */
+static void draw_search_icon(int cx, int cy, int r) {
+    float rr = r * 0.55f, ox = cx - r * 0.2f, oy = cy - r * 0.2f;
+    for (int y = (int)(oy - rr - 2); y <= (int)(oy + rr + 2); y++)
+        for (int x = (int)(ox - rr - 2); x <= (int)(ox + rr + 2); x++) {
+            float d = sqrtf((x + 0.5f - ox) * (x + 0.5f - ox) + (y + 0.5f - oy) * (y + 0.5f - oy));
+            float cov = clampf(1.0f - fabsf(d - rr) / 1.2f, 0, 1);
+            if (cov > 0 && x >= clip_x0 && x < clip_x1 && y >= clip_y0 && y < clip_y1) blend(x, y, RGB(0x50, 0x5c, 0x70), (int)(255 * cov));
+        }
+    aa_line(ox + rr * 0.7f, oy + rr * 0.7f, cx + r * 0.85f, cy + r * 0.85f, imax(2, r / 5), RGB(0x50, 0x5c, 0x70));
+}
 static void draw_zip_icon(int cx, int cy, int r) {
     draw_folder_icon(cx, cy, r);
     int h = r * 3 / 2, y = cy - h / 2, zw = imax(2, r / 3);
@@ -5844,6 +6014,7 @@ static void explorer_draw(int cx, int cy, int cw, int ch) {
     for (int i = 0; i < EX_NCMD; i++) {
         int en = ex_cmd_enabled(i);
         int x, y, w, h; ex_cmd_rect(i, &x, &y, &w, &h);
+        if (!w) continue;
         if (en && hotid == ID_EXCMD + i) {
             fill_round_grad(cx + x, cy + y, w, h, 3, RGB(0xfc, 0xfe, 0xff), RGB(0xd8, 0xec, 0xfc), 255);
             stroke_round(cx + x, cy + y, w, h, 3, RGB(0x84, 0xb4, 0xe4), 255);
@@ -5918,7 +6089,7 @@ static void explorer_draw(int cx, int cy, int cw, int ch) {
             char fp_[512]; ex_child(fp_, sizeof fp_, it->name);
             int faded = ex_clip_cut_has(fp_);
             draw_icon(it->dir ? ex_folder_icon(fp_) : !strcmp(ty, "Text Document") ? ICON_NOTE : !strcmp(ty, "Picture") ? ICON_PHOTO :
-                      !strcmp(ty, "Video") ? ICON_VIDEO : !strcmp(ty, "Sound") ? ICON_MUSIC : !strcmp(ty, "Zip archive") ? ICON_ZIP :
+                      !strcmp(ty, "Video") ? ICON_VIDEO : !strcmp(ty, "Sound") ? ICON_MUSIC : !strcmp(ty, "Zip archive") || !strcmp(ty, "Archive") ? ICON_ZIP :
                       !strcmp(ty, "Application") ? launcher_icon(it->name) : ICON_FILE,
                       mx0 + 16, y + EX_ROW_H / 2, 7);
             char nm[64]; int maxc = imax(4, (col_date - mx0 - 40) / 8);
@@ -5956,6 +6127,17 @@ static void explorer_draw(int cx, int cy, int cw, int ch) {
         else snprintf(st, sizeof st, "%d items", EX_NDRIVE);
     }
     else if (ex_note[0] && ui_ms() < ex_note_until) snprintf(st, sizeof st, "%s", ex_note);
+    else if (ex_in_bin() && ex_sel >= 0 && ex_nselected() == 1) {
+        char o[600]; long long w = 0;
+        if (!bin_lookup(ex_items[ex_sel].name, o, sizeof o, &w)) {
+            char *s = strrchr(o, '/'); if (s && s != o) *s = 0;
+            struct tm tm; time_t tt = (time_t)w; localtime_r(&tt, &tm);
+            char d[32]; strftime(d, sizeof d, "%d.%m.%Y %H:%M", &tm);
+            char pp[200]; pretty_path(o, pp, sizeof pp);
+            snprintf(st, sizeof st, "From %.60s   deleted %s", pp, d);
+        } else snprintf(st, sizeof st, "%s", ex_items[ex_sel].name);
+    }
+    else if (ex_in_bin() && !ex_n) snprintf(st, sizeof st, "The Recycle Bin is empty.");
     else if (ex_nselected() > 1) {
         long long sum = 0; int n = 0;
         for (int i = 0; i < ex_n; i++) if (ex_mark[i]) { n++; if (!ex_items[i].dir) sum += ex_items[i].size; }
@@ -6043,7 +6225,7 @@ static void ex_open_item(int i) {
     ExItem *it = &ex_items[i];
     char p[512]; ex_child(p, sizeof p, it->name);
     if (it->dir) { ex_go(p, 1); return; }
-    if (ex_is_zip(it->name)) { ex_extract(p); return; }         /* a zip: unpack it into a folder */
+    if (ex_is_archive(it->name)) { ex_extract(p); return; }         /* a zip: unpack it into a folder */
     if (is_launcher(it->name)) { launcher_run(p); return; }     /* Downloads > Flathub > an app */
     if (is_ccupd(it->name)) { up_install_file(p); return; }     /* a ccos update file */
     const char *app = media_app_for(it->name);
@@ -6060,6 +6242,8 @@ static void ex_open_item(int i) {
 /* open any file with the right app (pictures, videos, sounds, text) */
 static void open_file(const char *path) {
     if (is_launcher(path)) { launcher_run(path); return; }
+    if (is_ccupd(path)) { up_install_file(path); return; }
+    if (ex_is_archive(path)) { struct stat as; if (stat(path, &as) == 0 && S_ISREG(as.st_mode)) { ex_extract(path); return; } }
     { struct stat ds; if (stat(path, &ds) == 0 && S_ISDIR(ds.st_mode)) { run("@explorer"); ex_go(path, 1); return; } }
     const char *app = media_app_for(path);
     if (app) { char c[600]; snprintf(c, sizeof c, "%s %s", app, path); run(c); return; }
@@ -6078,7 +6262,7 @@ static void explorer_rclick(int lx, int ly, int cw, int ch) {
     {   /* a USB drive (tile or left pane): Open / Eject */
         int u = -1;
         if (id >= ID_EXDRIVE + 2 && id < ID_EXDRIVE + EX_NDRIVE && !ex_path[0]) u = id - ID_EXDRIVE - 2;
-        if (id >= ID_EXNAV + 7 && id < ID_EXNAV + EX_NNAV) u = id - ID_EXNAV - 7;
+        if (id >= ID_EXNAV + 8 && id < ID_EXNAV + EX_NNAV) u = id - ID_EXNAV - 8;
         if (u >= 0) {
             const char *lb[2] = { "Open", "Eject" };
             int ac[2] = { PA_OPEN_FILE, PA_EJECT };
@@ -6089,6 +6273,21 @@ static void explorer_rclick(int lx, int ly, int cw, int ch) {
     if (!ex_path[0]) return;
     const char *lb[MAXPOP]; int ac[MAXPOP], n = 0;
     #define ADD(l, a) do { lb[n] = (l); ac[n] = (a); n++; } while (0)
+    if (ex_in_bin()) {                                  /* the Recycle Bin's own menu */
+        if (id < 0 || id >= ex_n) {
+            if (ex_multi || ex_sel >= 0) { ex_single(-1); repaint_client(explorer_draw); }
+            if (!ex_n) return;
+            ADD("Restore all", PA_RESTOREALL); ADD("Empty Recycle Bin", PA_EMPTYBIN); ADD("Select all", PA_SELALL);
+            pop_show_list(mx, my, ICON_BIN_FULL, ex_path, n, lb, ac);
+            return;
+        }
+        if (!ex_selected(id)) ex_single(id);
+        repaint_client(explorer_draw);
+        char bp[512]; ex_child(bp, sizeof bp, ex_items[id].name);
+        ADD("Restore", PA_RESTORE); ADD("Delete for good", PA_DELETE);
+        pop_show_list(mx, my, ex_items[id].dir ? ICON_FOLDER : ICON_FILE, bp, n, lb, ac);
+        return;
+    }
     if (id < 0 || id >= ex_n) {                         /* empty space: Paste, New folder */
         if (ex_multi || ex_sel >= 0) { ex_single(-1); repaint_client(explorer_draw); }
         if (fclip.n) ADD("Paste", PA_PASTE);
@@ -6108,16 +6307,49 @@ static void explorer_rclick(int lx, int ly, int cw, int ch) {
     int ns = ex_nselected(), mk = ex_items[id].dir ? 0 : media_kind(ex_items[id].name);
     int img = ns == 1 && mk == MK_IMAGE && media_kind(p) == MK_IMAGE && !strstr(p, ".svg");
     if (ns == 1) ADD("Open", PA_OPEN_FILE);
-    if (ns == 1 && ex_is_zip(ex_items[id].name)) ADD("Extract all", PA_UNZIP);
+    if (ns == 1 && ex_is_archive(ex_items[id].name)) ADD("Extract all", PA_UNZIP);
     ADD("Cut", PA_CUT);
     ADD("Copy", PA_COPY);
     if (ns == 1) ADD("Rename", PA_RENAME);
     ADD("Delete", PA_DELETE);
-    if (!(ns == 1 && ex_is_zip(ex_items[id].name))) ADD("Compress to zip", PA_ZIP);
+    if (!(ns == 1 && ex_is_archive(ex_items[id].name))) ADD("Compress to zip", PA_ZIP);
     if (img) { ADD("Set as desktop background", PA_SET_WALL); ADD("Print...", PA_PRINT); }
     #undef ADD
     pop_show_list(mx, my, ex_items[id].dir ? ICON_FOLDER : mk == MK_IMAGE ? ICON_PHOTO : mk == MK_VIDEO ? ICON_VIDEO : mk == MK_AUDIO ? ICON_MUSIC :
-                  ex_is_zip(ex_items[id].name) ? ICON_ZIP : ICON_FILE, p, n, lb, ac);
+                  ex_is_archive(ex_items[id].name) ? ICON_ZIP : ICON_FILE, p, n, lb, ac);
+}
+/* ---- the Recycle Bin's buttons ---- */
+static void desk_bin_changed(void);
+/* "/data/Documents/x" -> "D:/Documents/x", Downloads by name */
+static void pretty_path(const char *p, char *out, size_t n) {
+    const char *dl = dl_dir(); size_t dn = strlen(dl);
+    if (!strncmp(p, dl, dn) && (p[dn] == '/' || !p[dn])) snprintf(out, n, "Downloads%s", p + dn);
+    else if (!strncmp(p, "/data", 5) && (p[5] == '/' || !p[5])) snprintf(out, n, "D:%s", p[5] ? p + 5 : "/");
+    else snprintf(out, n, "%s", p);
+}
+static void ex_bin_restore(int all) {
+    int done = 0, bad = 0; char last[1100] = "";
+    for (int i = 0; i < ex_n; i++) {
+        if (!all && !ex_selected(i)) continue;
+        if (bin_restore(ex_items[i].name, last, sizeof last)) bad++; else done++;
+    }
+    bin_tidy_index(); sync();
+    char m[120];
+    if (bad) snprintf(m, sizeof m, "%d item%s couldn't be put back.", bad, bad == 1 ? "" : "s");
+    else if (done == 1) { char *s = strrchr(last, '/'); if (s) *s = 0; char pp[200]; pretty_path(last, pp, sizeof pp); snprintf(m, sizeof m, "Put back in %.80s", pp); }
+    else snprintf(m, sizeof m, "Put back %d items where they were.", done);
+    ex_note_set(m);
+    ex_sig = ex_read(); ex_single(-1);
+    desk_bin_changed();
+    repaint_client(explorer_draw);
+}
+static void ex_bin_empty_ask(void) {
+    if (!bin_count()) return;
+    ex_dlg_mode = EXD_EMPTYBIN;
+    char m[80]; int n = bin_count();
+    snprintf(m, sizeof m, n == 1 ? "Delete the item in the Recycle Bin for good?" : "Delete all %d items in the Recycle Bin for good?", n);
+    dlg_open(&ex_dlg, DLG_MSG, "Empty Recycle Bin", m, "This can't be undone.", "Empty", "Cancel", NULL, ex_dlg_done);
+    repaint_client(explorer_draw);
 }
 static void ex_need_writable(void) { ex_info("System files can't be changed.", "You can make changes on D: only."); }
 
@@ -6152,6 +6384,26 @@ static void ex_delete(void) {
     int ns = ex_nselected();
     if (!ns) return;
     if (!ex_writable()) { ex_need_writable(); return; }
+    if (!ex_in_bin() && !shift) {                       /* to the Recycle Bin, if they can go there */
+        int n, all = 1; char **v = ex_sel_paths(&n);
+        for (int i = 0; v && i < n; i++) if (!bin_can(v[i])) all = 0;
+        if (v && all) {
+            int done = 0;
+            for (int i = 0; i < n; i++) if (!bin_put(v[i])) done++;
+            ex_free_list(v, n);
+            sync();
+            char m[80];
+            if (done == n) snprintf(m, sizeof m, done == 1 ? "Moved to the Recycle Bin." : "Moved %d items to the Recycle Bin.", done);
+            else snprintf(m, sizeof m, "%d of %d items couldn't be moved to the Recycle Bin.", n - done, n);
+            ex_note_set(m);
+            ex_sig = ex_read(); ex_single(-1);
+            ex_scroll = imin(ex_scroll, imax(0, ex_n - 1));
+            desk_bin_changed();
+            repaint_client(explorer_draw);
+            return;
+        }
+        if (v) ex_free_list(v, n);
+    }
     ex_dlg_mode = EXD_DELETE;
     if (ns > 1) {
         char m[80]; snprintf(m, sizeof m, "these %d items, and everything in them?", ns);
@@ -6253,11 +6505,17 @@ void ex_dlg_done(int b) {
         }
         ex_sig = ex_read(); ex_select_name(name);
         repaint_client(explorer_draw);
+    } else if (ex_dlg_mode == EXD_EMPTYBIN && b == 0) {
+        if (bin_empty()) ex_info("Some items couldn't be deleted.", NULL);
+        ex_sig = ex_read(); ex_single(-1);
+        desk_bin_changed();
+        repaint_client(explorer_draw);
     } else if (ex_dlg_mode == EXD_DELETE && b == 0 && ex_nselected()) {
         int n, bad = 0; char **v = ex_sel_paths(&n);
         for (int i = 0; v && i < n; i++) if (rm_rf(v[i])) bad++;
         if (v) ex_free_list(v, n);
         if (bad) ex_info(bad == 1 ? "Something couldn't be deleted." : "Some items couldn't be deleted.", NULL);
+        if (ex_in_bin()) { bin_tidy_index(); desk_bin_changed(); }
         sync();
         ex_sig = ex_read(); ex_single(-1);
         ex_scroll = imin(ex_scroll, imax(0, ex_n - 1));
@@ -6279,6 +6537,12 @@ static void explorer_click(int lx, int ly, int cw, int ch) {
         char labels[EX_MAXCRUMB][40], paths[EX_MAXCRUMB][256];
         ex_crumbs(labels, paths);
         ex_go(paths[id - ID_EXCRUMB], 1);
+    } else if (id >= ID_EXCMD && id < ID_EXCMD + EX_NCMD && ex_in_bin()) {
+        if (!ex_cmd_enabled(id - ID_EXCMD)) return;
+        if (id == ID_EXCMD) ex_bin_restore(0);
+        else if (id == ID_EXCMD + 1) ex_bin_restore(1);
+        else if (id == ID_EXCMD + 2) ex_bin_empty_ask();
+        else if (id == ID_EXCMD + 5) ex_delete();
     } else if (id == ID_EXCMD) ex_new_folder();
     else if (id == ID_EXCMD + 1) ex_clip(1);
     else if (id == ID_EXCMD + 2) ex_clip(0);
@@ -6471,14 +6735,17 @@ static void mark_cursor(void) {
     mark(cur_x + x0, cur_y + y0, x1 - x0, y1 - y0);
 }
 
+static void rec_changed(void);
 static void present(void) {
     int shape = pointer_shape();
     if (mx != cur_x || my != cur_y || shape != cur_shape || set_cursor_col != cur_col || set_cursor_size != cur_size) {
+        rec_changed();
         mark_cursor();                                   /* where it was */
         cur_x = mx; cur_y = my; cur_shape = shape; cur_col = set_cursor_col; cur_size = set_cursor_size;
         mark_cursor();                                   /* where it is now */
     }
     if (!ndirty) return;
+    rec_changed();
     for (int i = 0; i < ndirty; i++) blit(dirty[i].x0, dirty[i].y0, dirty[i].x1, dirty[i].y1);
     ndirty = 0;
     draw_cursor_fb();
@@ -6495,10 +6762,12 @@ static void update_hover(void) {
 }
 
 static void net_panel_set(int open);
+static void ms_reset(int open);
 static void set_menu(int open) {
     if (open && net_panel) net_panel_set(0);
     if (open) fp_scan();                              /* apps installed since last time */
     if (open == menu_open) return;
+    ms_reset(open);
     menu_open = open;
     repaint_menu();
     hot.type = HOT_NONE;
@@ -6592,6 +6861,19 @@ static void run(const char *cmd) {
             static const Win t = { .title = "Copying", .icon = ICON_FOLDER, .no_max = 1, .draw = fileop_draw, .click = fileop_click,
                                    .key = fileop_key, .on_close = fileop_on_close };
             open_win(&t, FO_W, FO_H);
+            return;
+        }
+        if (!strcmp(cmd, "@camera")) {
+            static const Win t = { .title = "Camera", .icon = ICON_CAMERA, .draw = cam_draw, .click = cam_click, .hit = cam_hit,
+                                   .key = cam_key, .tick = cam_tick, .on_close = cam_on_close, .fd = cam_fd, .wake = cam_wake, .no_dark = 1 };
+            open_win(&t, CAM_W, CAM_H);
+            cam_start();
+            return;
+        }
+        if (!strcmp(cmd, "@record")) {
+            static const Win t = { .title = "Record", .icon = ICON_RECORD, .no_max = 1, .draw = rec_draw, .click = rec_click,
+                                   .hit = rec_hit, .tick = rec_app_tick };
+            open_win(&t, REC_W, REC_H);
             return;
         }
         if (!strcmp(cmd, "@print")) {
@@ -6792,6 +7074,9 @@ static void ex_pop_action(int act, const char *path) {
     case PA_UNZIP: ex_extract(path); break;
     case PA_NEWFOLDER: ex_new_folder(); break;
     case PA_SELALL: ex_select_all(); repaint_client(explorer_draw); break;
+    case PA_RESTORE: ex_bin_restore(0); break;
+    case PA_RESTOREALL: ex_bin_restore(1); break;
+    case PA_EMPTYBIN: ex_bin_empty_ask(); break;
     default: if (act >= PA_NEWFILE && act < PA_NEWFILE + EX_NNEWT) ex_new_file(act - PA_NEWFILE); break;
     }
 }
@@ -6866,6 +7151,7 @@ static void press(void) {
     }
     if (hot.type == HOT_TRAY) { pop_close(); set_menu(0); net_panel_set(!net_panel); return; }
     if (hot.type == HOT_BAT) { pop_close(); set_menu(0); st_tab = TAB_POWER; run("@settings"); st_repaint(); return; }
+    if (hot.type == HOT_REC) { rec_stop(); return; }
     if (net_panel) {
         if (hot.type == HOT_NETP) { net_do(hot.a); update_hover(); return; }
         if (in_rect(netp_x0, netp_y0, NETP_W, netp_h)) return;
@@ -6887,6 +7173,8 @@ static void press(void) {
         if (hot.a == 2) { set_menu(0); power_sleep(); return; }
         power_action(hot.a == 0 ? "poweroff" : "reboot"); return;
     case HOT_LITEM: { const char *c = left_items[hot.a].cmd; set_menu(0); run(c); return; }
+    case HOT_SRES: msr_open(hot.a); return;
+    case HOT_SBOX: return;
     case HOT_RITEM: { const char *c = right_items[hot.a].cmd; set_menu(0); run(c); return; }
     case HOT_TASK: {
         TbItem it[MAXPINS + MAXWIN];
@@ -7003,7 +7291,7 @@ static int win_under_mouse(void) {
 }
 
 static void rpress(void) {                            /* right mouse button */
-    if (stick_wait) return;
+    if (stick_wait || snip_on) return;
     if (wl_popup_button(0x111, 1)) { wl_popup_button(0x111, 0); return; }   /* a Wayland app's menu */
     if (pop.open) { pop_close(); return; }
     update_hover();
@@ -7039,7 +7327,7 @@ static void rpress(void) {                            /* right mouse button */
 }
 
 static void wheel(int amount) {
-    if (stick_wait) return;
+    if (stick_wait || snip_on) return;
     int i = win_under_mouse();
     if (i >= 0 && wins[i].wheel) wins[i].wheel(amount);
 }
@@ -7052,6 +7340,7 @@ static void on_signal(int s) { (void)s; restore_console(); _exit(0); }
  * bottom-right corner, or with two fingers down, is a right click. */
 static void left_button(int down) {
     if (stick_wait) { if (down) stick_wait_click(); return; }
+    if (snip_on) { snip_button(down); return; }
     if ((down ? !mouse_down : 1) && wl_popup_button(0x110 /* BTN_LEFT */, down)) {   /* a Wayland app's menu */
         if (!down) { drag_win = -1; content_drag = -1; rz_win = -1; }
         mouse_down = down; return;
@@ -7149,6 +7438,10 @@ static int touchpad_event(int d, const struct input_event *v) {
     return 1;
 }
 
+#include "record.c"               /* Record: the screen into a video */
+#include "camera.c"               /* Camera: the webcam */
+#include "menusearch.c"           /* type in the Start menu */
+#include "screenshot.c"           /* Print Screen and Win+Shift+S */
 #include "stickwait.c"            /* waiting for the USB boot stick before loading settings */
 int main(void) {
     int fb = open("/dev/fb0", O_RDWR);
@@ -7195,6 +7488,8 @@ int main(void) {
     check_persistent();
     fp_scan();                                    /* Flatpak apps (pins may point at them) */
     load_settings();
+    if (!set_bin_icon) { desk_add(BIN_CMD, "Recycle Bin"); set_bin_icon = 1; }
+    desk_bin_changed();
     tz_init();
     power_init();
     toast_fifo_open();
@@ -7274,8 +7569,10 @@ int main(void) {
         int wait_ms = 1000 - tv.tv_usec / 1000;
         { int o = osd_wait(); if (o >= 0 && o < wait_ms) wait_ms = o + 1; }
         { int o = toast_wait(); if (o >= 0 && o < wait_ms) wait_ms = o + 1; }
+        { int o = rec_wait(); if (o >= 0 && o < wait_ms) wait_ms = o; }
 
         int polled = poll(pfd, n, wait_ms);
+        rec_tick();                                        /* Record: a picture of the screen */
         osd_wait();                                        /* hide the popup when its time is up */
         toast_wait();
         if (polled <= 0) {
@@ -7353,6 +7650,30 @@ int main(void) {
                             continue;
                         }
                         mx = clampi(mx, 0, W - 1); my = clampi(my, 0, H - 1);
+                        /* ccos's own keys, whatever app is active: Windows key, Print Screen, Win+Shift+S */
+                        if (v->code == KEY_LEFTMETA || v->code == KEY_RIGHTMETA) {
+                            if (v->value == 1) { meta_down = 1; meta_used = 0; }
+                            else if (v->value == 0) { meta_down = 0; if (!meta_used && !snip_on) set_menu(!menu_open); }
+                            continue;
+                        }
+                        if (v->code == KEY_SYSRQ) { if (v->value == 1 && !snip_on) shot_full(); continue; }
+                        {
+                            int mod = v->code == KEY_LEFTSHIFT || v->code == KEY_RIGHTSHIFT || v->code == KEY_LEFTCTRL ||
+                                      v->code == KEY_RIGHTCTRL || v->code == KEY_LEFTALT || v->code == KEY_RIGHTALT;
+                            if (mod && (meta_down || snip_on)) {
+                                if (v->code == KEY_LEFTSHIFT || v->code == KEY_RIGHTSHIFT) shift = down;
+                                if (v->code == KEY_LEFTCTRL || v->code == KEY_RIGHTCTRL) ctrl = down;
+                                if (v->code == KEY_LEFTALT) alt = down;
+                                continue;
+                            }
+                            if (snip_on && v->code < BTN_MISC) { if (v->value == 1 && v->code == KEY_ESC) snip_end(0); continue; }
+                            if (meta_down && v->code < BTN_MISC) {
+                                meta_used = 1;
+                                if (v->value == 1 && v->code == KEY_S && shift) snip_start();
+                                if (v->value == 1 && v->code == KEY_R && alt) rec_toggle();
+                                continue;
+                            }
+                        }
                         {   /* a Wayland app is active: it gets the keyboard as it is */
                             int a = active_win();
                             int is_key = v->code < BTN_MISC || v->code >= KEY_OK;
@@ -7400,7 +7721,7 @@ int main(void) {
                             if (net_panel) { net_key(v->code, (shift ? MOD_SHIFT : 0) | (ctrl ? MOD_CTRL : 0)); break; }
                             if (clk_panel && v->code == KEY_ESC) { clk_panel_set(0); break; }
                             if (v->code == KEY_ESC && pop.open) { pop_close(); break; }
-                            if (v->code == KEY_ESC && menu_open) { set_menu(0); break; }
+                            if (menu_open) { menu_search_key(v->code, (shift ? MOD_SHIFT : 0) | (ctrl ? MOD_CTRL : 0) | (altgr ? MOD_ALTGR : 0)); break; }
                             if (!menu_open) {                 /* send keys to the active app */
                                 int a = active_win();
                                 if (v->code == KEY_F11 && a >= 0 && !wins[a].no_max) { set_fullscreen(a, !wins[a].fullscreen); break; }
@@ -7424,7 +7745,8 @@ int main(void) {
         }
         mx = clampi(mx, 0, W - 1);
         my = clampi(my, 0, H - 1);
-        if (moved) {
+        if (moved && snip_on) snip_motion();
+        else if (moved) {
             if (drag_win >= 0) move_win(drag_win, mx - drag_dx, my - drag_dy);
             if (rz_win >= 0 && mouse_down) resize_follow();
             di_follow_mouse();
