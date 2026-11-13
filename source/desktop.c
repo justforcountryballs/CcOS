@@ -66,7 +66,7 @@
 
 /* ---- icons ---------------------------------------------------------- */
 enum { ICON_NONE, ICON_GEAR, ICON_CALC, ICON_NOTE, ICON_MINE, ICON_FOLDER, ICON_FILE, ICON_DRIVE, ICON_COMPUTER, ICON_GLOBE, ICON_TERMINAL, ICON_APP, ICON_CARDS, ICON_BAG, ICON_PHOTO, ICON_VIDEO, ICON_MUSIC,
-       ICON_FOLDER_IMG, ICON_FOLDER_DL, ICON_FOLDER_VID, ICON_USB, ICON_BATTERY, ICON_MOON, ICON_SUN, ICON_PRINTER, ICON_ZIP, ICON_BIN, ICON_BIN_FULL, ICON_CAMERA, ICON_RECORD, ICON_SEARCH };   /* coloured folders: Images, Downloads, Videos */
+       ICON_FOLDER_IMG, ICON_FOLDER_DL, ICON_FOLDER_VID, ICON_USB, ICON_BATTERY, ICON_MOON, ICON_SUN, ICON_PRINTER, ICON_ZIP, ICON_BIN, ICON_BIN_FULL, ICON_CAMERA, ICON_RECORD, ICON_SEARCH, ICON_PAINT, ICON_CALENDAR, ICON_SYSMON };   /* coloured folders: Images, Downloads, Videos */
 #define ICON_IMG 1000              /* ICON_IMG + n: an app's own picture (Flathub apps) */
 
 /* ===================================================================
@@ -78,8 +78,8 @@ enum { ICON_NONE, ICON_GEAR, ICON_CALC, ICON_NOTE, ICON_MINE, ICON_FOLDER, ICON_
  * =================================================================== */
 typedef struct { const char *label; const char *cmd; int icon; } MenuItem;
 
-#define FP_MENU 5                  /* Flatpak apps shown in the start menu */
-#define NBUILTIN 13                /* built-in programs in the start menu */
+#define FP_MENU 4                  /* Flatpak apps shown in the start menu */
+#define NBUILTIN 16                /* built-in programs in the start menu */
 static MenuItem left_items[NBUILTIN + FP_MENU + 1] = {   /* white panel (programs); Flatpak apps are added after these */
     { "Terminal", "@terminal", ICON_TERMINAL },
     { "File Explorer", "@explorer", ICON_FOLDER },
@@ -92,6 +92,9 @@ static MenuItem left_items[NBUILTIN + FP_MENU + 1] = {   /* white panel (program
     { "Music", "@music", ICON_MUSIC },
     { "Camera", "@camera", ICON_CAMERA },
     { "Record", "@record", ICON_RECORD },
+    { "Paint", "@paint", ICON_PAINT },
+    { "Calendar", "@calendar", ICON_CALENDAR },
+    { "System Monitor", "@sysmon", ICON_SYSMON },
     { "Software Manager", "@store", ICON_BAG },
     { "Settings", "@settings", ICON_GEAR },
     { NULL, NULL, 0 }
@@ -217,6 +220,7 @@ static const AppInfo apps[] = {
     { "@store", "Software Manager", ICON_BAG },
     { "@photos", "Photos", ICON_PHOTO }, { "@videos", "Videos", ICON_VIDEO }, { "@music", "Music", ICON_MUSIC },
     { "@camera", "Camera", ICON_CAMERA }, { "@record", "Record", ICON_RECORD },
+    { "@paint", "Paint", ICON_PAINT }, { "@calendar", "Calendar", ICON_CALENDAR }, { "@sysmon", "System Monitor", ICON_SYSMON },
 };
 /* ---- apps installed with Flatpak (from Flathub) -------------------
  * Flatpak puts a .desktop file for each one in its "exports" folder;
@@ -425,15 +429,17 @@ static int pin_index(const char *cmd) {
 
 /* ---- layout ------------------------------------------------------ */
 static int set_dock;             /* the taskbar as a Dock (dock.c) */
+static int set_anim = 1;         /* window animations (anim.c) */
 #define DOCK_RES   76         /* the bottom strip the Dock keeps for itself */
 #define TASKBAR_H  (set_dock ? DOCK_RES : 40)
 #define TBI_H      40         /* clock, network, battery: their strip */
 #define TBI_Y      (H - TBI_H - (set_dock ? 14 : 0))
-#define TB_RIGHT   (W - (set_dock ? 40 : 0))   /* the Dock has a power button right of the clock */
+#define BELL_W     36         /* the notification bell, right of the clock */
+#define TB_RIGHT   (W - (set_dock ? 40 : 0) - BELL_W)   /* the Dock has a power button right of it */
 #define ORB_R      17
 #define MENU_W     400
 #define MENU_H     680
-#define ITEM_H     32
+#define ITEM_H     28
 #define CLOCK_W    100
 #define FRAME      (set_style ? 1 : 8)   /* window side/bottom border (Modern: a thin line) */
 #define TITLE_H    30         /* window title bar (incl. top border) */
@@ -1040,8 +1046,14 @@ static void draw_bin_icon(int cx, int cy, int r, int full);
 static void draw_camera_icon(int cx, int cy, int r);
 static void draw_record_icon(int cx, int cy, int r);
 static void draw_search_icon(int cx, int cy, int r);
+static void draw_paint_icon(int cx, int cy, int r);
+static void draw_calendar_icon(int cx, int cy, int r);
+static void draw_sysmon_icon(int cx, int cy, int r);
 static void draw_icon_raw(int icon, int cx, int cy, int r) {
     if (icon >= ICON_IMG) draw_img_icon(icon - ICON_IMG, cx, cy, r);
+    else if (icon == ICON_PAINT) draw_paint_icon(cx, cy, r);
+    else if (icon == ICON_CALENDAR) draw_calendar_icon(cx, cy, r);
+    else if (icon == ICON_SYSMON) draw_sysmon_icon(cx, cy, r);
     else if (icon == ICON_BIN || icon == ICON_BIN_FULL) draw_bin_icon(cx, cy, r, icon == ICON_BIN_FULL);
     else if (icon == ICON_CAMERA) draw_camera_icon(cx, cy, r);
     else if (icon == ICON_RECORD) draw_record_icon(cx, cy, r);
@@ -1169,6 +1181,7 @@ static void load_settings(void) {
         if (sscanf(line, "wifi=%d", &v) == 1) set_wifi = !!v;
         if (sscanf(line, "style=%d", &v) == 1) set_style = set_smooth = !!v;
         if (sscanf(line, "dock=%d", &v) == 1) set_dock = !!v;
+        if (sscanf(line, "anim=%d", &v) == 1) set_anim = !!v;
         if (sscanf(line, "dark=%d", &v) == 1) set_dark = !!v;
         if (sscanf(line, "cursor2=%d", &v) == 1 && v >= 0 && v < 3) set_cursor_col = v;   /* (the old "cursor=" was the old pointer: black is the new look) */
         if (sscanf(line, "cursorsize=%d", &v) == 1 && v >= 0 && v < 3) set_cursor_size = v;
@@ -1236,7 +1249,7 @@ static void save_settings(void) {
     FILE *f = fopen(CONF_PATH ".tmp", "w");
     if (!f) return;
     fprintf(f, "wallpic=%d\nclock24=%d\nsound=%d\nnet=%d\nwifi=%d\nfont=%d\n", set_wall, set_clock24, set_sound, set_net, set_wifi, set_smooth);
-    fprintf(f, "volume=%d\nmuted=%d\nstyle=%d\ndark=%d\ndock=%d\n", set_volume, set_muted, set_style, set_dark, set_dock);
+    fprintf(f, "volume=%d\nmuted=%d\nstyle=%d\ndark=%d\ndock=%d\nanim=%d\n", set_volume, set_muted, set_style, set_dark, set_dock, set_anim);
     fprintf(f, "wallimg=%s\nwallfit=%d\n", set_wall_img, set_wall_fit);
     fprintf(f, "cursor2=%d\ncursorsize=%d\ntpspeed=%d\n", set_cursor_col, set_cursor_size, set_tp_speed);
     fprintf(f, "bright=%d\nscreenoff=%d\nsleepafter=%d\nlid=%d\n", set_bright, set_off_idx, set_sleep_idx, set_lid);
@@ -1331,7 +1344,7 @@ static int content_drag = -1;          /* window whose content is being dragged 
 static long long last_click_ms; static int last_click_win = -1;
 
 /* what the mouse is pointing at ("hot"), so it can be highlighted */
-enum { HOT_NONE, HOT_ORB, HOT_SD, HOT_LITEM, HOT_RITEM, HOT_CAP, HOT_TASK, HOT_CONTENT, HOT_ICON, HOT_POPUP, HOT_TRAY, HOT_NETP, HOT_BAT, HOT_CLOCK, HOT_CLKP, HOT_SRES, HOT_SBOX, HOT_REC, HOT_DOCKBIN, HOT_DPOWER };
+enum { HOT_NONE, HOT_ORB, HOT_SD, HOT_LITEM, HOT_RITEM, HOT_CAP, HOT_TASK, HOT_CONTENT, HOT_ICON, HOT_POPUP, HOT_TRAY, HOT_NETP, HOT_BAT, HOT_CLOCK, HOT_CLKP, HOT_SRES, HOT_SBOX, HOT_REC, HOT_DOCKBIN, HOT_DPOWER, HOT_BELL, HOT_NC, HOT_CH };
 typedef struct { int type, a, b; } Hot;
 static Hot hot;
 
@@ -1428,7 +1441,7 @@ static int di_at_mouse(void) {
 #define POP_IH 26
 enum { PA_NONE, PA_OPEN, PA_PIN, PA_UNPIN, PA_CLOSE, PA_DESK_ADD, PA_DESK_DEL, PA_OPEN_FILE, PA_SET_WALL, PA_CUSTOMIZE, PA_EJECT, PA_PRINT,
        PA_CUT, PA_COPY, PA_PASTE, PA_RENAME, PA_DELETE, PA_ZIP, PA_UNZIP, PA_NEWFOLDER, PA_SELALL, PA_RESTORE, PA_RESTOREALL, PA_EMPTYBIN,
-       PA_NEWMENU, PA_NEWFILE /* .. PA_NEWFILE + 7: File Explorer's New > list */, PA_SLEEP = PA_NEWFILE + 20, PA_RESTART, PA_SHUTDOWN };
+       PA_NEWMENU, PA_NEWFILE /* .. PA_NEWFILE + 7: File Explorer's New > list */, PA_SLEEP = PA_NEWFILE + 20, PA_RESTART, PA_SHUTDOWN, PA_PAINT };
 #define POP_SUBMAX 8
 #define SUB_W 236
 static struct {
@@ -2211,9 +2224,17 @@ static long long ui_ms(void);
 static void aa_line(float x0, float y0, float x1, float y1, float wdt, uint32_t c);
 static int rec_on(void);
 static int finder_running(void);
+static int nc_open, ch_open;
+static int nc_hit(void); static int ch_hit(void);
+static void draw_bell(void); static void draw_nc(void); static void draw_ch(void);
+static int bell_x(void); static void nc_repaint(void); static void repaint_bell(void); static void ch_repaint(void);
+static void nc_set(int open); static void ch_set(int open); static void nc_click(int id); static void ch_click(int id);
+static void ch_key(int code); static void ch_wheel(int amount); static void nc_wheel(int amount); static void ch_tick(void);
 #include "dock.c"                 /* the taskbar's other look: a Dock */
 
 static Hot find_hot(void) {
+    if (ch_open) { Hot h0 = { HOT_NONE, 0, 0 }; int id = ch_hit(); if (id >= 0) { h0.type = HOT_CH; h0.a = id; } if (id != -1) return h0; }
+    if (nc_open) { Hot h0 = { HOT_NONE, 0, 0 }; int id = nc_hit(); if (id >= 0) { h0.type = HOT_NC; h0.a = id; } if (id != -1) return h0; }
     Hot h = { HOT_NONE, 0, 0 };
     if (clk_panel && in_rect(clkp_x0(), clkp_y0(), CLKP_W, CLKP_H)) {
         h.type = HOT_CLKP; h.a = clkp_hit(mx, my); return h;
@@ -2271,6 +2292,7 @@ static Hot find_hot(void) {
         return h;
     }
     if (ON_TASKBAR && set_dock && in_rect(dpow_x(), TBI_Y + 3, DPOW_W, TBI_H - 6)) { h.type = HOT_DPOWER; return h; }
+    if (ON_TASKBAR && in_rect(bell_x(), TBI_Y + 3, BELL_W - 2, TBI_H - 6)) { h.type = HOT_BELL; return h; }
     if (ON_TASKBAR && in_rect(tray_x(), TBI_Y + 3, TRAY_W, TBI_H - 6)) {
         h.type = HOT_TRAY; return h;
     }
@@ -2450,6 +2472,7 @@ static void draw_taskbar(void) {
     draw_task_buttons();
     }
     draw_clock();
+    draw_bell();
     rec_draw_tb();
     /* network icon in the tray */
     int tx = tray_x(), ty = TBI_Y + 3;
@@ -2642,9 +2665,11 @@ static void draw_caption_button(Win *w, int idx, int b) {
     }
 }
 
+static void draw_window(int idx);
+#include "anim.c"                 /* windows pour into the Dock, grow in, fade out */
 static void draw_window(int idx) {
     Win *w = &wins[idx];
-    if (!w->open || w->minimized) return;
+    if (!w->open || w->minimized || anim_hides(idx)) return;
     if (w->x - 2 >= clip_x1 || w->x + w->w + 6 <= clip_x0 ||
         w->y - 2 >= clip_y1 || w->y + w->h + 6 <= clip_y0) return;
     int act = idx == active_win();
@@ -2957,7 +2982,9 @@ static struct { char title[64], body[160]; int icon; long long until; char app[9
 static int ntoast;
 static int toast_y(int i) { return H - TASKBAR_H - 10 - (i + 1) * (TOAST_H + 8); }
 static void repaint_toasts(void) { repaint(W - TOAST_W - 16, toast_y(MAXTOAST - 1) - 6, TOAST_W + 22, (TOAST_H + 8) * MAXTOAST + 14); }
+static void nc_add(int icon, const char *title, const char *body);
 static void toast(int icon, const char *title, const char *body) {
+    nc_add(icon, title, body);
     if (ntoast == MAXTOAST) { memmove(toasts, toasts + 1, sizeof toasts[0] * (MAXTOAST - 1)); ntoast--; }
     snprintf(toasts[ntoast].title, sizeof toasts[0].title, "%s", title);
     snprintf(toasts[ntoast].body, sizeof toasts[0].body, "%s", body ? body : "");
@@ -3223,6 +3250,8 @@ static void settings_draw(int cx, int cy, int cw, int ch) {
         st_choice(cx + 514, cy + LK_FONT_Y + 12, 130, 30, "Dock", set_dock == 1);
         draw_text(cx + 372, cy + LK_FONT_Y + 50, set_dock ? "Icons grow when you point" : "Start menu, window buttons", grey, 255);
         draw_text(cx + 372, cy + LK_FONT_Y + 68, set_dock ? "at them; /o\\ opens Finder" : "and the clock", grey, 255);
+        draw_text(cx + 372, cy + LK_FONT_Y + 106, "Window animations", text, 255);
+        st_switch(cx + cw - 24 - TG_W, cy + LK_FONT_Y + 102, set_anim);
         if (set_style) {
             draw_text(cx + 24, cy + LK_FONT_Y + 80, "Mode", text, 255);
             st_choice(cx + 24, cy + LK_FONT_Y + 100, 150, 30, "Light", !set_dark);
@@ -3496,6 +3525,8 @@ static void settings_click(int lx, int ly, int cw, int ch) {
             else if (lx >= 186 && lx < 336) style_set(1, set_dark);
             else if (lx >= 372 && lx < 502) dock_set(0);
             else if (lx >= 514 && lx < 644) dock_set(1);
+        } else if (ly >= LK_FONT_Y + 96 && ly < LK_FONT_Y + 132 && lx >= 372) {
+            set_anim = !set_anim; save_settings(); st_repaint();
         } else if (set_style && ly >= LK_FONT_Y + 100 && ly < LK_FONT_Y + 130) {
             if (lx >= 24 && lx < 174) style_set(1, 0);
             else if (lx >= 186 && lx < 336) style_set(1, 1);
@@ -3879,10 +3910,13 @@ static void repaint(int x, int y, int w, int h) {
     }
     for (int k = from; k < nz; k++) draw_window(zorder[k]);
     wl_draw_popups();                                       /* menus of Wayland apps */
+    anim_draw();
     if (menu_open) draw_menu();
     if (!taskbar_hidden()) draw_taskbar();
     if (net_panel) draw_net_panel();
     if (clk_panel) draw_clock_panel(hot.type == HOT_CLKP ? hot.a : 0);
+    draw_nc();
+    draw_ch();
     draw_osd();
     draw_toasts();
     if (pop.open) {                                         /* right-click menu, on top of all */
@@ -3980,6 +4014,9 @@ static void repaint_hot(Hot h) {
     case HOT_ORB:   if (set_dock) repaint_taskbar(); else repaint(orb_cx() - ORB_R - 2, orb_cy() - ORB_R - 2, 2 * ORB_R + 5, 2 * ORB_R + 5); break;
     case HOT_DOCKBIN: repaint_taskbar(); break;
     case HOT_DPOWER: repaint(dpow_x(), H - TASKBAR_H, DPOW_W, TASKBAR_H); break;
+    case HOT_BELL:  repaint_bell(); break;
+    case HOT_NC:    nc_repaint(); break;
+    case HOT_CH:    ch_repaint(); break;
     case HOT_SD:    power_rect(h.a, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
     case HOT_LITEM: repaint(LI_X, ITEMS_Y + h.a * ITEM_H, LI_W, ITEM_H); break;
     case HOT_SRES: repaint(LI_X, ITEMS_Y + h.a * ITEM_H, LI_W, ITEM_H); if (h.a != ms_sel) repaint(LI_X, ITEMS_Y + ms_sel * ITEM_H, LI_W, ITEM_H); break;
@@ -4024,6 +4061,8 @@ static void raise_win(int idx) {
 
 static void close_win(int idx) {
     Win *w = &wins[idx];
+    if (w->open && !w->minimized) anim_start(AN_CLOSE, idx);
+    else if (an.kind != AN_NONE && an.win == idx) anim_stop();
     int x = w->x, y = w->y, ww = w->w, hh = w->h, was_min = w->minimized;
     int k;
     for (k = 0; k < nz && zorder[k] != idx; k++) {}
@@ -4035,6 +4074,7 @@ static void close_win(int idx) {
 }
 
 static void minimize_win(int idx) {
+    if (!wins[idx].minimized) anim_start(AN_MIN, idx);
     wins[idx].minimized = 1;
     repaint_window(idx);
     int a = active_win(); if (a >= 0) repaint_window(a);
@@ -4042,6 +4082,7 @@ static void minimize_win(int idx) {
 }
 
 static void restore_win(int idx) {           /* un-minimize and bring to front */
+    if (wins[idx].minimized) anim_start(AN_RESTORE, idx);
     wins[idx].minimized = 0;
     int old = active_win();
     int k;
@@ -4119,6 +4160,7 @@ static int open_win(const Win *tmpl, int cw, int ch) {
         w->y = clampi(w->y, 0, imax(0, H - TASKBAR_H - w->h));
         int old = active_win();
         zorder[nz++] = i;
+        anim_start(AN_OPEN, i);
         repaint_window(i);
         if (old >= 0) repaint_window(old);
         repaint_taskbar();
@@ -4226,11 +4268,15 @@ static int key_text(int code, int mods, char *out) {
 /* ---- clipboard (shared by every app) -------------------------------- */
 static char *clipboard;
 static int clip_len;
+static void ch_put(int png, const char *data, size_t n);
+static void wl_clip_set_text(const char *s, size_t n);
 static void clip_set(const char *s, int n) {
     char *c = malloc((size_t)n + 1);
     if (!c) return;
     memcpy(c, s, n); c[n] = 0;
     free(clipboard); clipboard = c; clip_len = n;
+    ch_put(0, s, (size_t)n);                     /* Windows + V remembers it */
+    wl_clip_set_text(s, (size_t)n);              /* and Wayland apps (Firefox...) can paste it */
 }
 
 /* ---- menu bar + drop-down ------------------------------------------- */
@@ -6408,7 +6454,7 @@ static void explorer_rclick(int lx, int ly, int cw, int ch) {
     if (ns == 1) ADD("Rename", PA_RENAME);
     ADD("Delete", PA_DELETE);
     if (!(ns == 1 && ex_is_archive(ex_items[id].name))) ADD("Compress to zip", PA_ZIP);
-    if (img) { ADD("Set as desktop background", PA_SET_WALL); ADD("Print...", PA_PRINT); }
+    if (img) { ADD("Edit in Paint", PA_PAINT); ADD("Set as desktop background", PA_SET_WALL); ADD("Print...", PA_PRINT); }
     #undef ADD
     pop_show_list(mx, my, ex_items[id].dir ? ICON_FOLDER : mk == MK_IMAGE ? ICON_PHOTO : mk == MK_VIDEO ? ICON_VIDEO : mk == MK_AUDIO ? ICON_MUSIC :
                   ex_is_archive(ex_items[id].name) ? ICON_ZIP : ICON_FILE, p, n, lb, ac);
@@ -6722,6 +6768,8 @@ static void explorer_tick(void) {               /* notice files saved by other a
 #include "cp437map.h"                 /* letters for Wi-Fi names */
 static int wake_pipe[2] = { -1, -1 };
 #include "wayland.c"            /* real Linux apps (Wayland) in ccos windows */
+#include "cliphist.c"           /* Windows + V: what was copied */
+#include "notifcenter.c"        /* the bell: notifications kept */
 
 /* ---- resizing windows by dragging an edge or corner ----------------- */
 #define RZ_L 1
@@ -6938,6 +6986,9 @@ static void restore_console(void) {
     if (tty >= 0) ioctl(tty, KDSETMODE, KD_TEXT);
 }
 
+static void paint_open(const char *path);
+static void calendar_open(void);
+static void sysmon_open(void);
 static void run(const char *cmd) {
     if (!cmd) return;
     if (!strncmp(cmd, "flatpak:", 8)) {               /* an app from Flathub */
@@ -6965,6 +7016,9 @@ static void run(const char *cmd) {
             cam_start();
             return;
         }
+        if (!strcmp(cmd, "@paint") || !strncmp(cmd, "@paint ", 7)) { paint_open(cmd[6] ? cmd + 7 : NULL); return; }
+        if (!strcmp(cmd, "@calendar")) { calendar_open(); return; }
+        if (!strcmp(cmd, "@sysmon")) { sysmon_open(); return; }
         if (!strcmp(cmd, "@record")) {
             static const Win t = { .title = "Record", .icon = ICON_RECORD, .no_max = 1, .draw = rec_draw, .click = rec_click,
                                    .hit = rec_hit, .tick = rec_app_tick };
@@ -7188,6 +7242,7 @@ static void pop_do(int i) {
     char path[512]; snprintf(path, sizeof path, "%s", pop.path);
     pop_close();
     if (act == PA_SLEEP) { power_sleep(); return; }
+    if (act == PA_PAINT) { paint_open(path); update_hover(); return; }
     if (act == PA_RESTART) { power_action("reboot"); return; }
     if (act == PA_SHUTDOWN) { power_action("poweroff"); return; }
     if (act == PA_OPEN_FILE) { open_file(path); update_hover(); return; }
@@ -7241,6 +7296,14 @@ static void net_panel_set(int open) {
 
 static void press(void) {
     update_hover();
+    if (ch_open) { if (hot.type == HOT_CH) ch_click(hot.a); else if (ch_hit() == -1) ch_set(0); return; }
+    if (hot.type == HOT_BELL) { pop_close(); set_menu(0); net_panel_set(0); clk_panel_set(0); nc_set(!nc_open); return; }
+    if (nc_open) {
+        if (hot.type == HOT_NC) { nc_click(hot.a); return; }
+        if (nc_hit() != -1) return;
+        nc_set(0);                               /* clicked elsewhere: close it */
+        return;
+    }
     if (hot.type == HOT_CLOCK) { pop_close(); set_menu(0); net_panel_set(0); clk_panel_set(!clk_panel); return; }
     if (clk_panel) {
         if (hot.type == HOT_CLKP) { if (hot.a) clkp_click(hot.a); return; }
@@ -7428,6 +7491,8 @@ static void rpress(void) {                            /* right mouse button */
 
 static void wheel(int amount) {
     if (stick_wait || snip_on) return;
+    if (ch_open) { ch_wheel(amount > 0 ? -1 : 1); return; }
+    if (nc_open && nc_hit() != -1) { nc_wheel(amount > 0 ? -1 : 1); return; }
     int i = win_under_mouse();
     if (i >= 0 && wins[i].wheel) wins[i].wheel(amount);
 }
@@ -7542,6 +7607,9 @@ static int touchpad_event(int d, const struct input_event *v) {
 #include "camera.c"               /* Camera: the webcam */
 #include "menusearch.c"           /* type in the Start menu */
 #include "finder.c"               /* Finder: the Dock's first icon */
+#include "paint.c"                /* Paint */
+#include "calendar.c"             /* Calendar, with reminders */
+#include "sysmon.c"               /* System Monitor */
 #include "screenshot.c"           /* Print Screen and Win+Shift+S */
 #include "stickwait.c"            /* waiting for the USB boot stick before loading settings */
 int main(void) {
@@ -7676,10 +7744,12 @@ int main(void) {
         { int o = rec_wait(); if (o >= 0 && o < wait_ms) wait_ms = o; }
         if ((ms_scanning || bgsync_again) && wait_ms > 100) wait_ms = 100;   /* waiting for a helper */
         { int d = dock_tick(); if (d >= 0 && d < wait_ms) wait_ms = d; }
+        { int d = anim_tick(); if (d >= 0 && d < wait_ms) wait_ms = d; }
 
         int polled = poll(pfd, n, wait_ms);
         rec_tick();                                        /* Record: a picture of the screen */
         bg_sync_tick();
+        ch_tick();
         ms_tick();                                         /* Start menu search: files read */
         osd_wait();                                        /* hide the popup when its time is up */
         toast_wait();
@@ -7779,6 +7849,7 @@ int main(void) {
                                 meta_used = 1;
                                 if (v->value == 1 && v->code == KEY_S && shift) snip_start();
                                 if (v->value == 1 && v->code == KEY_R && alt) rec_toggle();
+                                if (v->value == 1 && v->code == KEY_V) ch_set(!ch_open);
                                 continue;
                             }
                         }
@@ -7791,7 +7862,7 @@ int main(void) {
                                 if (v->value == 1) set_fullscreen(a, !wins[a].fullscreen);   /* X11 apps: ccos does F11 */
                                 continue;
                             }
-                            if (is_key && !ours && a >= 0 && wins[a].rawkey && !menu_open && !net_panel && !pop.open) {
+                            if (is_key && !ours && a >= 0 && wins[a].rawkey && !menu_open && !net_panel && !pop.open && !ch_open) {
                                 if (v->code == KEY_LEFTSHIFT || v->code == KEY_RIGHTSHIFT) shift = down;
                                 if (v->code == KEY_LEFTCTRL || v->code == KEY_RIGHTCTRL) ctrl = down;
                                 if (v->code == KEY_LEFTALT || (v->code == KEY_RIGHTALT && set_kbd != KBD_PL)) alt = down;
@@ -7816,7 +7887,7 @@ int main(void) {
                         case KEY_LEFTALT:  alt = down; break;
                         case KEY_RIGHTALT: if (set_kbd == KBD_PL) altgr = down; else alt = down; break;
                         case KEY_LEFTMETA: case KEY_RIGHTMETA:
-                            if (v->value == 1) set_menu(!menu_open);
+                            if (v->value == 1) { if (set_dock) finder_open(); else set_menu(!menu_open); }
                             break;
                         case KEY_POWER:
                             if (v->value == 1) shutdown_now();
@@ -7826,6 +7897,8 @@ int main(void) {
                             /* fall through: otherwise it goes to the active app */
                         default:
                             if (!down) break;
+                            if (ch_open) { ch_key(v->code); break; }
+                            if (nc_open && v->code == KEY_ESC) { nc_set(0); break; }
                             if (net_panel) { net_key(v->code, (shift ? MOD_SHIFT : 0) | (ctrl ? MOD_CTRL : 0)); break; }
                             if (clk_panel && v->code == KEY_ESC) { clk_panel_set(0); break; }
                             if (v->code == KEY_ESC && pop.open) { pop_close(); break; }
@@ -7878,6 +7951,7 @@ int main(void) {
         time_t nowt = time(NULL);
         if (nowt != last_tick) {
             last_tick = nowt;
+            cal_tick();                               /* Calendar reminders */
             for (int i = 0; i < MAXWIN; i++) if (wins[i].open && wins[i].tick) wins[i].tick();
             {   /* the USB stick's save file showed up after the desktop started */
                 static int was = -1;
