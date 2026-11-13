@@ -32,7 +32,12 @@ if [ ! -f "$WCONF" ]; then
     printf 'ctrl_interface=/run/wpa_supplicant\nupdate_config=1\ncountry=PL\n' > "$WCONF"
 fi
 chmod 600 "$WCONF"
-wpa_supplicant -B -D nl80211 -i wlan0 -c "$WCONF" >/dev/null 2>&1
+# what happened while connecting (wrong password, router said no...): the desktop reads it,
+# and it's in D:/wifi/wifi-log.txt for checking by hand
+WLOG=/tmp/wifi-log.txt; mountpoint -q /data && WLOG=/data/wifi/wifi-log.txt
+[ -f "$WLOG" ] && tail -c 20000 "$WLOG" > "$WLOG.old" 2>/dev/null; : > "$WLOG"
+grep -q '^sae_pwe=' "$WCONF" || echo 'sae_pwe=2' >> "$WCONF"          # WPA3: both ways of using the password
+wpa_supplicant -B -t -D nl80211 -i wlan0 -c "$WCONF" -f "$WLOG" >/dev/null 2>&1
 for i in 1 2 3 4 5 6 7 8 9 10; do [ -S /run/wpa_supplicant/wlan0 ] && break; usleep 100000; done
 wpa_cli -p /run/wpa_supplicant -i wlan0 -a /usr/share/wifi/action.sh -B >/dev/null 2>&1      # gets an address on connect
 if [ "$NET" = 0 ] || [ "$WIFI" = 0 ]; then                          # Wi-Fi or networking switched off

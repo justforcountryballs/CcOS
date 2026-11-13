@@ -36,31 +36,56 @@ static void ms_add(int kind, int icon, int tab, const char *label, const char *c
     ms_n++;
 }
 
-static void ms_walk(const char *dir, int depth) {
-    if (depth > 6 || ms_nfiles >= 4000) return;
+/* the file list is read by a helper thread (a USB stick can take a while), then taken over here */
+typedef struct { char **v; int n; } MsList;
+static void ms_walk(MsList *L, const char *dir, int depth) {
+    if (depth > 6 || L->n >= 4000) return;
     DIR *d = opendir(dir); if (!d) return;
     struct dirent *e;
-    while ((e = readdir(d)) && ms_nfiles < 4000) {
+    while ((e = readdir(d)) && L->n < 4000) {
         if (e->d_name[0] == '.' || !strcmp(e->d_name, "lost+found")) continue;
         char p[600]; snprintf(p, sizeof p, "%s/%s", dir, e->d_name);
         struct stat st; if (lstat(p, &st)) continue;
-        char **nv = realloc(ms_files, sizeof *ms_files * (size_t)(ms_nfiles + 1)); if (!nv) break;
-        ms_files = nv;
+        char **nv = realloc(L->v, sizeof *L->v * (size_t)(L->n + 1)); if (!nv) break;
+        L->v = nv;
         size_t l = strlen(p);
-        ms_files[ms_nfiles] = malloc(l + 2);
-        if (!ms_files[ms_nfiles]) break;
-        ms_files[ms_nfiles][0] = S_ISDIR(st.st_mode) ? 'd' : 'f';
-        memcpy(ms_files[ms_nfiles] + 1, p, l + 1);
-        ms_nfiles++;
-        if (S_ISDIR(st.st_mode)) ms_walk(p, depth + 1);
+        L->v[L->n] = malloc(l + 2);
+        if (!L->v[L->n]) break;
+        L->v[L->n][0] = S_ISDIR(st.st_mode) ? 'd' : 'f';
+        memcpy(L->v[L->n] + 1, p, l + 1);
+        L->n++;
+        if (S_ISDIR(st.st_mode)) ms_walk(L, p, depth + 1);
     }
     closedir(d);
 }
+static MsList ms_new; static volatile int ms_scanning, ms_scan_ready;
+static char ms_dl[300];
+static void *ms_scan_thread(void *arg) {
+    (void)arg;
+    MsList L = { NULL, 0 };
+    ms_walk(&L, "/data", 0);
+    if (strncmp(ms_dl, "/data", 5)) ms_walk(&L, ms_dl, 0);
+    ms_new = L;
+    __atomic_store_n(&ms_scan_ready, 1, __ATOMIC_RELEASE);
+    return NULL;
+}
 static void ms_scan_files(void) {
+    if (ms_scanning) return;                                  /* still reading from last time */
+    snprintf(ms_dl, sizeof ms_dl, "%s", dl_dir());
+    ms_scanning = 1; ms_scan_ready = 0;
+    pthread_t t; pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&t, &at, ms_scan_thread, NULL)) ms_scanning = 0;
+    pthread_attr_destroy(&at);
+}
+static void ms_update(void);
+/* in the main loop: the helper thread finished - use its list */
+static void ms_tick(void) {
+    if (!ms_scanning || !__atomic_load_n(&ms_scan_ready, __ATOMIC_ACQUIRE)) return;
     for (int i = 0; i < ms_nfiles; i++) free(ms_files[i]);
-    free(ms_files); ms_files = NULL; ms_nfiles = 0;
-    ms_walk("/data", 0);
-    if (strncmp(dl_dir(), "/data", 5)) ms_walk(dl_dir(), 0);
+    free(ms_files);
+    ms_files = ms_new.v; ms_nfiles = ms_new.n; ms_new.v = NULL; ms_new.n = 0;
+    ms_scanning = 0; ms_scan_ready = 0;
+    if (menu_open && ms_q[0]) { int sel = ms_sel; ms_update(); ms_sel = imin(sel, imax(0, ms_n - 1)); repaint_menu(); }
 }
 
 static void ms_update(void) {

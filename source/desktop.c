@@ -20,6 +20,7 @@
  * Build: gcc -O2 -o desktop desktop.c -lm -lwayland-server -lxkbcommon -lz
  */
 #define _GNU_SOURCE
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -300,6 +301,18 @@ static int desk_icon_for(const char *cmd) {
 }
 #define BIN_CMD "@explorer /data/.bin"
 static void pretty_path(const char *p, char *out, size_t n);
+/* write what's waiting to the stick - in a helper process, because on a USB stick
+   that can take seconds (more while files are being copied or downloaded), and the
+   desktop would freeze meanwhile */
+static pid_t bgsync_pid; static int bgsync_again;
+static void bg_sync(void) {
+    if (bgsync_pid > 0 && kill(bgsync_pid, 0) == 0) { bgsync_again = 1; return; }   /* one is running: once more after it */
+    bgsync_again = 0;
+    pid_t p = fork();
+    if (p == 0) { sync(); _exit(0); }
+    bgsync_pid = p > 0 ? p : 0;
+}
+static void bg_sync_tick(void) { if (bgsync_again && !(bgsync_pid > 0 && kill(bgsync_pid, 0) == 0)) bg_sync(); }
 #include "bin.c"                 /* the Recycle Bin */
 static void repaint_all(void);
 static void desk_bin_changed(void) {          /* the desktop Bin: empty or full */
@@ -1249,9 +1262,9 @@ static void save_settings(void) {
     fprintf(f, "pins=");
     for (int i = 0; i < npins; i++) fprintf(f, "%s%s", i ? "," : "", pins[i]);
     fprintf(f, "\n");
-    fflush(f); fsync(fileno(f)); fclose(f);
+    fflush(f); fclose(f);
     rename(CONF_PATH ".tmp", CONF_PATH);         /* atomic: never half-written */
-    sync();
+    bg_sync();
 }
 
 static void check_persistent(void) {             /* is /data its own disk? */
@@ -1660,6 +1673,21 @@ static int net_cmp(const void *a, const void *b) {
     return y->sig - x->sig;
 }
 
+/* wpa_supplicant's log: why connecting failed */
+static off_t pend_logpos;
+static const char *wifi_log_path(void) { return access("/data/wifi/wifi-log.txt", F_OK) == 0 ? "/data/wifi/wifi-log.txt" : "/tmp/wifi-log.txt"; }
+static int wifi_fail_reason(void) {            /* 0 nothing yet, 1 wrong password, 2 the router said no / failed */
+    FILE *f = fopen(wifi_log_path(), "r"); if (!f) return 0;
+    if (fseeko(f, pend_logpos, SEEK_SET)) { fclose(f); return 0; }
+    char line[512]; int r = 0;
+    while (fgets(line, sizeof line, f)) {
+        if (strstr(line, "reason=WRONG_KEY") || strstr(line, "pre-shared key may be incorrect")) r = 1;
+        else if (!r && (strstr(line, "CTRL-EVENT-SSID-TEMP-DISABLED") || strstr(line, "CTRL-EVENT-ASSOC-REJECT") ||
+                        strstr(line, "CTRL-EVENT-AUTH-REJECT"))) r = 2;
+    }
+    fclose(f);
+    return r;
+}
 static void wifi_pending_done(const char *msg, int ok) {
     if (!ok && pend_new && pend_id >= 0) {
         char c[48]; snprintf(c, sizeof c, "REMOVE_NETWORK %d", pend_id); wpa_ok(c);
@@ -1756,7 +1784,11 @@ static int wifi_poll(int full) {
         else {
             int bad = 0;
             for (int s = 0; s < wifi.nsaved; s++) if (wifi.saved[s].id == pend_id && wifi.saved[s].temp_disabled) bad = 1;
-            if (bad) wifi_pending_done("Wrong password. Please try again.", 0);
+            int why = wifi_fail_reason();
+            if (why == 1) wifi_pending_done("Wrong password. Please try again.", 0);
+            else if (why == 2 && (bad || time(NULL) - pend_t0 > 12))
+                wifi_pending_done("The router didn't let us in. Try again, or move closer to it.", 0);
+            else if (bad && time(NULL) - pend_t0 > 12) wifi_pending_done("Couldn't connect. Check the password and try again.", 0);
             else if (time(NULL) - pend_t0 > 25) wifi_pending_done("Couldn't connect to this network.", 0);
         }
     }
@@ -1830,7 +1862,8 @@ static void wifi_connect(int i) {
     }
     if (!w->secure) { snprintf(cmd, sizeof cmd, "SET_NETWORK %d key_mgmt NONE", id); wpa_ok(cmd); }
     else if (need_pass) {
-        snprintf(cmd, sizeof cmd, "SET_NETWORK %d key_mgmt %s", id, w->sae_only ? "SAE" : "WPA-PSK WPA-PSK-SHA256 SAE"); wpa_ok(cmd);
+        /* WPA2 where the router offers it: WPA3 (SAE) next to it fails with some routers and Wi-Fi cards */
+        snprintf(cmd, sizeof cmd, "SET_NETWORK %d key_mgmt %s", id, w->sae_only ? "SAE" : "WPA-PSK WPA-PSK-SHA256"); wpa_ok(cmd);
         snprintf(cmd, sizeof cmd, "SET_NETWORK %d ieee80211w %d", id, w->sae_only ? 2 : 1); wpa_ok(cmd);
         snprintf(cmd, sizeof cmd, "SET_NETWORK %d psk \"%s\"", id, wifi_pass);
         if (!wpa_ok(cmd)) {
@@ -1840,6 +1873,7 @@ static void wifi_connect(int i) {
         }
     }
     snprintf(cmd, sizeof cmd, "SELECT_NETWORK %d", id); wpa_ok(cmd);
+    { struct stat ls; pend_logpos = stat(wifi_log_path(), &ls) == 0 ? ls.st_size : 0; }
     pend_id = id; pend_new = fresh; pend_t0 = time(NULL);
     snprintf(pend_esc, sizeof pend_esc, "%s", w->esc);
     snprintf(wifi_msg, sizeof wifi_msg, "Connecting...");
@@ -4686,7 +4720,7 @@ static int np_write(void) {                     /* save to np_file; 1 on success
     FILE *f = fopen(path, "w");
     if (!f) { np_info("Could not save the file.", "Is the save disk working?"); return 0; }
     fwrite(np_buf, 1, np_len, f);
-    fflush(f); fsync(fileno(f)); fclose(f); sync();
+    fflush(f); fclose(f); bg_sync();
     np_modified = 0;
     np_set_title();
     return 1;
@@ -6352,7 +6386,7 @@ static void ex_bin_restore(int all) {
         if (!all && !ex_selected(i)) continue;
         if (bin_restore(ex_items[i].name, last, sizeof last)) bad++; else done++;
     }
-    bin_tidy_index(); sync();
+    bin_tidy_index(); bg_sync();
     char m[120];
     if (bad) snprintf(m, sizeof m, "%d item%s couldn't be put back.", bad, bad == 1 ? "" : "s");
     else if (done == 1) { char *s = strrchr(last, '/'); if (s) *s = 0; char pp[200]; pretty_path(last, pp, sizeof pp); snprintf(m, sizeof m, "Put back in %.80s", pp); }
@@ -6410,7 +6444,7 @@ static void ex_delete(void) {
             int done = 0;
             for (int i = 0; i < n; i++) if (!bin_put(v[i])) done++;
             ex_free_list(v, n);
-            sync();
+            bg_sync();
             char m[80];
             if (done == n) snprintf(m, sizeof m, done == 1 ? "Moved to the Recycle Bin." : "Moved %d items to the Recycle Bin.", done);
             else snprintf(m, sizeof m, "%d of %d items couldn't be moved to the Recycle Bin.", n - done, n);
@@ -6482,7 +6516,7 @@ void ex_dlg_done(int b) {
             snprintf(name, sizeof name, "%s", nn);
         }
         if (mkdir(p, 0755)) { ex_info("Could not create the folder.", NULL); return; }
-        sync();
+        bg_sync();
         ex_sig = ex_read(); ex_select_name(name);
         repaint_client(explorer_draw);
     } else if (ex_dlg_mode == EXD_NEWFILE && b == 0) {
@@ -6505,7 +6539,7 @@ void ex_dlg_done(int b) {
         if (len) fwrite(ex_newt[ex_new_kind].body, 1, (size_t)len, f);
         fclose(f);
         if (ex_newt[ex_new_kind].exec) chmod(p, 0755);
-        sync();
+        bg_sync();
         ex_sig = ex_read(); ex_select_name(nm);
         repaint_client(explorer_draw);
     } else if (ex_dlg_mode == EXD_RENAME && b == 0 && ex_sel >= 0) {
@@ -6516,7 +6550,7 @@ void ex_dlg_done(int b) {
         if (strcmp(p, q)) {
             if (access(q, F_OK) == 0) { ex_info("There is already a file", "with that name."); return; }
             if (rename(p, q)) { ex_info("Could not rename it.", NULL); return; }
-            sync();
+            bg_sync();
             if (win_of(notepad_draw) >= 0 && !strcmp(np_dir, ex_path) && !strcmp(np_file, ex_items[ex_sel].name)) {
                 snprintf(np_file, sizeof np_file, "%s", name);           /* keep Notepad in step */
                 np_set_title();
@@ -6535,7 +6569,7 @@ void ex_dlg_done(int b) {
         if (v) ex_free_list(v, n);
         if (bad) ex_info(bad == 1 ? "Something couldn't be deleted." : "Some items couldn't be deleted.", NULL);
         if (ex_in_bin()) { bin_tidy_index(); desk_bin_changed(); }
-        sync();
+        bg_sync();
         ex_sig = ex_read(); ex_single(-1);
         ex_scroll = imin(ex_scroll, imax(0, ex_n - 1));
         repaint_client(explorer_draw);
@@ -7593,9 +7627,12 @@ int main(void) {
         { int o = osd_wait(); if (o >= 0 && o < wait_ms) wait_ms = o + 1; }
         { int o = toast_wait(); if (o >= 0 && o < wait_ms) wait_ms = o + 1; }
         { int o = rec_wait(); if (o >= 0 && o < wait_ms) wait_ms = o; }
+        if ((ms_scanning || bgsync_again) && wait_ms > 100) wait_ms = 100;   /* waiting for a helper */
 
         int polled = poll(pfd, n, wait_ms);
         rec_tick();                                        /* Record: a picture of the screen */
+        bg_sync_tick();
+        ms_tick();                                         /* Start menu search: files read */
         osd_wait();                                        /* hide the popup when its time is up */
         toast_wait();
         if (polled <= 0) {

@@ -158,6 +158,6 @@ static int bin_empty(void) {
     }
     closedir(d);
     unlink(BIN_INDEX);
-    sync();
+    bg_sync();
     return bad;
 }
