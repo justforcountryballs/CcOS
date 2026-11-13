@@ -52,7 +52,7 @@ static int wl_is_dmabuf(struct wl_resource *buf) {
     return buf && wl_resource_instance_of(buf, &wl_buffer_interface, &dmb_buf_impl);
 }
 /* copy the picture into the surface's pixels (our 0xAARRGGBB) */
-static int dmabuf_copy(struct wl_resource *buf, uint32_t **px, int *pw, int *ph, int *alpha) {
+static int dmabuf_copy(struct wl_resource *buf, uint32_t **px, int *pw, int *ph, int *alpha, const int *rect) {
     dmabuf_t *b = wl_resource_get_user_data(buf);
     if (!b) return 0;
     if (!b->map) {
@@ -60,20 +60,27 @@ static int dmabuf_copy(struct wl_resource *buf, uint32_t **px, int *pw, int *ph,
         b->map = mmap(NULL, b->map_len, PROT_READ, MAP_SHARED, b->fd, 0);
         if (b->map == MAP_FAILED) { b->map = NULL; return 0; }
     }
+    int x0 = 0, y0 = 0, x1 = b->w, y1 = b->h;
     if (b->w != *pw || b->h != *ph || !*px) {
         free(*px); *px = malloc((size_t)b->w * b->h * 4);
         *pw = *px ? b->w : 0; *ph = *px ? b->h : 0;
         if (!*px) return 0;
+    } else if (rect) {                                   /* only what changed (reading GPU memory is slow) */
+        x0 = rect[0] < 0 ? 0 : rect[0]; y0 = rect[1] < 0 ? 0 : rect[1];
+        x1 = rect[2] > b->w ? b->w : rect[2]; y1 = rect[3] > b->h ? b->h : rect[3];
+        if (x1 < x0) x1 = x0;
+        if (y1 < y0) y1 = y0;
+        ((int *)rect)[0] = x0; ((int *)rect)[1] = y0; ((int *)rect)[2] = x1; ((int *)rect)[3] = y1;
     }
     struct dma_buf_sync sy = { DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ };
     ioctl(b->fd, DMA_BUF_IOCTL_SYNC, &sy);            /* waits until the GPU has finished drawing */
     const unsigned char *src = (const unsigned char *)b->map + b->offset;
     int swap = b->format == DRM_ABGR8888 || b->format == DRM_XBGR8888;
-    for (int y = 0; y < b->h; y++) {
+    for (int y = y0; y < y1; y++) {
         const uint32_t *s = (const uint32_t *)(src + (size_t)y * b->stride);
         uint32_t *d = *px + (size_t)y * b->w;
-        if (!swap) memcpy(d, s, (size_t)b->w * 4);
-        else for (int x = 0; x < b->w; x++) { uint32_t v = s[x]; d[x] = (v & 0xff00ff00u) | ((v & 0xff) << 16) | ((v >> 16) & 0xff); }
+        if (!swap) memcpy(d + x0, s + x0, (size_t)(x1 - x0) * 4);
+        else for (int x = x0; x < x1; x++) { uint32_t v = s[x]; d[x] = (v & 0xff00ff00u) | ((v & 0xff) << 16) | ((v >> 16) & 0xff); }
     }
     sy.flags = DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ;
     ioctl(b->fd, DMA_BUF_IOCTL_SYNC, &sy);

@@ -138,7 +138,8 @@ static void fileop_poll(void) {
             free(fclip.path); fclip.path = NULL; fclip.n = 0; fclip.cut = 0;
         }
         const char *nm = strrchr(fj.first_new, '/');
-        if (win_of(explorer_draw) >= 0 && nm) {
+        if (fj.open_after && nm && win_of(explorer_draw) < 0) { run("@explorer"); ex_go(fj.first_new, 1); }   /* opened from Search */
+        else if (win_of(explorer_draw) >= 0 && nm) {
             char dir[512]; snprintf(dir, sizeof dir, "%s", fj.first_new); dir[nm - fj.first_new] = 0;
             if (fj.open_after) ex_go(fj.first_new, 1);
             else if (!strcmp(dir, ex_path)) {
@@ -184,6 +185,14 @@ static void ex_out_dir(char *out, size_t n) {
     else { snprintf(out, n, "%s", dl_dir()); mkdir(out, 0755); }
 }
 static int ex_is_zip(const char *name) { const char *e = strrchr(name, '.'); return e && !strcasecmp(e, ".zip"); }
+/* other archives ccos-files can unpack (with libarchive): how long the ending is, or 0 */
+static int ex_arc_ext(const char *name) {
+    static const char *ends[] = { ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".txz", ".tbz2", ".tar", ".rar", ".7z", ".zip", NULL };
+    size_t l = strlen(name);
+    for (int i = 0; ends[i]; i++) { size_t k = strlen(ends[i]); if (l > k && !strcasecmp(name + l - k, ends[i])) return (int)k; }
+    return 0;
+}
+static int ex_is_archive(const char *name) { return ex_arc_ext(name) > 0; }
 /* Compress: the selection into one zip file */
 static void ex_compress(void) {
     int n; char **v = ex_sel_paths(&n);
@@ -205,15 +214,19 @@ static void ex_compress(void) {
     fj_start(FJ_ZIP, argv, dir, 0);
     free(argv); ex_free_list(v, n);
 }
-/* Extract: a zip into a new folder with its name, then open that folder */
+/* Extract: a zip (or rar, 7z, tar...) into a new folder with its name, then open that folder */
 static void ex_extract(const char *zip) {
-    char dir[300]; ex_out_dir(dir, sizeof dir);
+    char dir[300]; snprintf(dir, sizeof dir, "%s", zip);       /* next to the archive, or in Downloads if that's read-only */
+    { char *sl = strrchr(dir, '/'); if (sl && sl != dir) *sl = 0; else snprintf(dir, sizeof dir, "/"); }
+    if (!ex_on_d(dir) || access(dir, W_OK)) { snprintf(dir, sizeof dir, "%s", dl_dir()); mkdir(dir, 0755); }
     char nm[200]; snprintf(nm, sizeof nm, "%s", strrchr(zip, '/') ? strrchr(zip, '/') + 1 : zip);
-    char *dot = strrchr(nm, '.'); if (dot && dot != nm) *dot = 0;
+    int el = ex_arc_ext(nm);
+    if (el && (size_t)el < strlen(nm)) nm[strlen(nm) - (size_t)el] = 0;   /* photos.tar.gz -> photos */
+    else { char *dot = strrchr(nm, '.'); if (dot && dot != nm) *dot = 0; }
     char out[600]; snprintf(out, sizeof out, "%s/%s", dir, nm);
     for (int k = 2; access(out, F_OK) == 0 && k < 100; k++) snprintf(out, sizeof out, "%s/%s (%d)", dir, nm, k);
     char zp[600]; snprintf(zp, sizeof zp, "%s", zip);
-    char *argv[] = { "ccos-files", "unzip", zp, out, NULL };
+    char *argv[] = { "ccos-files", ex_is_zip(zp) ? "unzip" : "extract", zp, out, NULL };
     fj_start(FJ_UNZIP, argv, dir, 1);
 }
 

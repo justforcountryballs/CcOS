@@ -13,7 +13,7 @@
  * Stop it with SIGTERM (the Cancel button): the half-done file is removed.
  * A name that's already taken gets " (2)" added, like Windows' "keep both".
  *
- * Build: gcc -O2 -o ccos-files files.c -lz
+ * Build: gcc -O2 -o ccos-files files.c -lz -larchive
  */
 #define _GNU_SOURCE
 #include <dirent.h>
@@ -31,6 +31,9 @@
 #include <unistd.h>
 #include <utime.h>
 #include <zlib.h>
+#include <locale.h>
+#include <archive.h>
+#include <archive_entry.h>
 
 static volatile sig_atomic_t stop;
 static void on_term(int s) { (void)s; stop = 1; }
@@ -412,12 +415,84 @@ static int cmd_unzip(const char *zip, const char *dest) {
     return 0;
 }
 
+/* .rar, .7z, .tar.gz/.xz/.bz2... (libarchive) */
+static int cmd_extract(const char *arc, const char *dest) {
+    struct archive *a = archive_read_new();
+    archive_read_support_format_all(a); archive_read_support_filter_all(a);
+    if (archive_read_open_filename(a, arc, 1 << 16) != ARCHIVE_OK) fail("This archive can't be opened (damaged, or an unknown kind)", arc);
+    /* first pass: how much, and is it all in one folder */
+    char top[256] = ""; int one_top = 1;
+    struct archive_entry *e;
+    while (archive_read_next_header(a, &e) == ARCHIVE_OK) {
+        char name[1024];
+        const char *pn = archive_entry_pathname_utf8(e); if (!pn) pn = archive_entry_pathname(e);
+        if (!pn || !safe_name(pn, name, sizeof name)) continue;
+        total += archive_entry_size(e); nitems++;
+        if (archive_entry_filetype(e) == AE_IFDIR && name[strlen(name) - 1] != '/') strncat(name, "/", sizeof name - strlen(name) - 1);
+        char *sl = strchr(name, '/');
+        if (!sl || (size_t)(sl - name) >= sizeof top - 1) { one_top = 0; continue; }
+        sl[1] = 0;
+        if (!top[0]) snprintf(top, sizeof top, "%.250s", name);
+        else if (strcmp(top, name)) one_top = 0;
+        check_stop();
+    }
+    archive_read_free(a);
+    size_t strip = one_top && top[0] ? strlen(top) : 0;
+    printf("T %lld %d\n", total, nitems); fflush(stdout);
+    mkdir(dest, 0755);
+    printf("N %s\n", dest); fflush(stdout);
+    a = archive_read_new();
+    archive_read_support_format_all(a); archive_read_support_filter_all(a);
+    if (archive_read_open_filename(a, arc, 1 << 16) != ARCHIVE_OK) fail("This archive can't be opened", arc);
+    static char buf[1 << 18];
+    int r;
+    while ((r = archive_read_next_header(a, &e)) == ARCHIVE_OK || r == ARCHIVE_WARN) {
+        check_stop();
+        char name[1024], out[PATH_MAX];
+        const char *pn = archive_entry_pathname_utf8(e); if (!pn) pn = archive_entry_pathname(e);
+        if (!pn || !safe_name(pn, name, sizeof name)) continue;
+        int isdir = archive_entry_filetype(e) == AE_IFDIR;
+        if (strip) { if (strlen(name) <= strip) continue; memmove(name, name + strip, strlen(name + strip) + 1); }
+        snprintf(out, sizeof out, "%s/%s", dest, name);
+        if (isdir || out[strlen(out) - 1] == '/') { strncat(out, "/", sizeof out - strlen(out) - 1); mkdirs(out); continue; }
+        if (archive_entry_filetype(e) != AE_IFREG) continue;              /* links, devices: skipped (safer) */
+        mkdirs(out);
+        FILE *o = fopen(out, "wb");
+        if (!o) fail(errno == ENOSPC ? "Not enough room" : "Couldn't write", out);
+        snprintf(partial, sizeof partial, "%s", out);
+        la_ssize_t k;
+        while ((k = archive_read_data(a, buf, sizeof buf)) > 0) {
+            if (fwrite(buf, 1, (size_t)k, o) != (size_t)k) fail("Not enough room on the drive for", out);
+            done_bytes += k; report(name, 0); check_stop();
+        }
+        if (k < 0) {
+            const char *m = archive_error_string(a);
+            if (m && (strstr(m, "assword") || strstr(m, "ncrypt"))) fail("Password-protected archives aren't supported", arc);
+            fail("This archive is damaged at", out);
+        }
+        if (fflush(o) != 0) fail("Not enough room on the drive for", out);
+        fclose(o); partial[0] = 0;
+        if (archive_entry_perm(e) & 0100) chmod(out, 0755);
+    }
+    if (r != ARCHIVE_EOF) {
+        const char *m = archive_error_string(a);
+        if (m && (strstr(m, "assword") || strstr(m, "ncrypt"))) fail("Password-protected archives aren't supported", arc);
+        fail("This archive is damaged (or partly unsupported)", arc);
+    }
+    archive_read_free(a);
+    report("", 1); sync();
+    printf("OK\n");
+    return 0;
+}
+
 int main(int argc, char **argv) {
+    setlocale(LC_CTYPE, "C.UTF-8");                     /* archive names are UTF-8 */
     signal(SIGTERM, on_term); signal(SIGINT, on_term);
     setvbuf(stdout, NULL, _IOLBF, 0);
     if (argc >= 4 && (!strcmp(argv[1], "copy") || !strcmp(argv[1], "move"))) return cmd_copy(argv[1][0] == 'm', argv[2], argv + 3, argc - 3);
     if (argc >= 4 && !strcmp(argv[1], "zip")) return cmd_zip(argv[2], argv + 3, argc - 3);
     if (argc == 4 && !strcmp(argv[1], "unzip")) return cmd_unzip(argv[2], argv[3]);
+    if (argc == 4 && !strcmp(argv[1], "extract")) return cmd_extract(argv[2], argv[3]);
     fprintf(stderr, "usage: ccos-files copy|move DEST SRC... | zip OUT.zip SRC... | unzip FILE.zip DEST\n");
     return 1;
 }

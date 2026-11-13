@@ -104,6 +104,17 @@ Desktop controls:
                                      your time zone. "Change time zone and time
                                      settings" opens Settings > Clock.
   Taskbar buttons                    show / minimize a window
+  Print Screen (PrtSc)               a screenshot of the whole screen: saved in
+                                     Images > Screenshots and copied, so
+                                     Ctrl+V pastes it into apps (Discord...)
+  Windows + Shift + S                drag a box around part of the screen for a
+                                     screenshot of just that part (Esc cancels)
+  Windows + Alt + R                  start / stop recording the screen (Record)
+  Start menu search                  open the start menu and just type: apps,
+                                     Settings pages ("wifi", "time", "dark")
+                                     and files/folders on D: and in Downloads.
+                                     Enter opens the top one, Up/Down pick,
+                                     Esc clears.
   Start menu, bottom buttons:
     Shut down                        shut down ccos
     Restart                          restart ccos
@@ -145,11 +156,25 @@ Apps (start menu):
                smooth icons and new _ [] X buttons; it has Light and Dark
                modes. Dark mode also darkens ccos's own apps (Photos,
                Videos, Solitaire and Flathub apps keep their own colours).
-  Desktop background: right-click a picture in File Explorer > Set as
-               desktop background. Right-click an empty spot on the desktop >
-               Customize opens Settings > Appearance, where you choose how the
-               picture sits: Fill, Fit, Stretch, Tile, Center or Span, or
-               Remove picture to go back to just the colour.
+  Desktop background: Settings > Appearance has 7 pictures made for ccos
+               (Water is the first one). Or use your own: right-click a picture
+               in File Explorer > Set as desktop background. Right-click an
+               empty spot on the desktop > Customize opens Settings >
+               Appearance, where you choose how your picture sits: Fill, Fit,
+               Stretch, Tile, Center or Span, or Remove picture.
+  Taskbar (Settings > Appearance): Bar is the usual taskbar with the start
+               menu. Dock is a floating shelf in the middle of the bottom:
+               point at it and the icons grow, with the name above the one
+               under the mouse. First comes /o\ (Finder), then pinned apps
+               and open windows (a dot under the open ones), then the Recycle
+               Bin. Right-click an icon to pin or unpin it. The clock, network,
+               battery and a power button (Sleep, Restart, Shut down) are in
+               the bottom right corner.
+  Finder       (Dock only: click /o\ or press the Windows key) everything in
+               one window, in tabs: Apps, Files, Images (with small previews),
+               Videos, Music and Downloads. Just type to search the tab, Tab
+               switches tabs, click something (or Enter for the first one) to
+               open it. Newest files come first.
   File Explorer's Favorites: Documents (yellow), Images (blue), Downloads
                (green) and Videos (purple). Images and Videos are on D:,
                Downloads is where Firefox and other Flathub apps save.
@@ -166,6 +191,16 @@ Apps (start menu):
                D: = ccos Data (the save disk: your settings and files)
                Double-click a folder to open it, a text file to open it in
                Notepad. New folder / Rename (F2) / Delete work on D: only.
+  Record       records the whole screen into a video (MP4) in Videos. Click
+               the red button: the window gets out of the way and a red
+               "REC 0:12" button on the taskbar counts; click it (or press
+               Windows + Alt + R) to stop. "Record the sound apps make" also
+               records what you hear (videos, games, Discord...).
+  Camera       the laptop's webcam. White button = a photo (Images > Camera),
+               red button = a video with the microphone (Videos > Camera),
+               press again to stop. The preview is mirrored, like a mirror;
+               the saved photos and videos aren't. If it says "No camera
+               found", check the laptop's camera switch or F-key.
   Calculator   like the Windows 7 one; also takes keyboard input
                (numbers, + - * /, Enter, Backspace, Esc = clear)
   Solitaire    classic Klondike: click the deck to turn cards, drag cards
@@ -221,17 +256,29 @@ File Explorer:
                                      move, another drive = copy (like Windows);
                                      hold Ctrl to copy. A label by the pointer
                                      says which it will do.
-  Delete / F2                        delete the selection / rename one file
+  Delete / F2                        Delete moves the selection to the Recycle
+                                     Bin; Shift+Delete deletes for good. F2
+                                     renames one file.
+  Recycle Bin                        on the desktop and on the left in File
+                                     Explorer. Deleted files from D: wait here:
+                                     it shows where each came from and when.
+                                     Restore puts a file back where it was;
+                                     Empty Recycle Bin deletes them for good.
+                                     (Files on USB sticks are deleted straight
+                                     away, after asking.)
   Right-click a file                 Open, Cut, Copy, Rename, Delete, Compress
                                      to zip (and Extract all for zips, Set as
                                      background and Print for pictures)
   Right-click empty space            Paste, New > (Folder, Text Document, Web
                                      Page, Shell Script, Markdown Notes, CSV
                                      Spreadsheet, Zip File), Select all
-  Zip files                          "Compress to zip" packs the selection into
+  Zip files and archives             "Compress to zip" packs the selection into
                                      one .zip; double-click a .zip (or Extract
                                      all) to unpack it into a folder. Zips from
                                      Windows/macOS work, Polish names too.
+                                     .rar, .7z, .tar, .tar.gz, .tar.xz and
+                                     .tar.bz2 unpack the same way (not ones
+                                     with a password).
   Downloads                          everything apps download (Firefox...) goes
                                      here. Downloads > Flathub has a launcher
                                      for every app installed from Flathub:

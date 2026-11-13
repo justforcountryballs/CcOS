@@ -40,7 +40,10 @@ ccos is built from these open-source projects:
   FFmpeg 6.1              GPL-2.0+ (Ubuntu's build)  https://ffmpeg.org  (Videos and Music)
                           with dav1d, libvpx, opus, vorbis, libmp3lame, openmpt and the other
                           decoder libraries Ubuntu's FFmpeg uses (BSD / LGPL / MIT licences)
-  libpulse-simple         LGPL-2.1+        (sound output for Videos and Music)
+  x264 (libx264 164)      GPL-2.0+         https://www.videolan.org/developers/x264.html
+                          (Record and Camera make H.264 videos with it)
+  libpulse-simple         LGPL-2.1+        (sound output for Videos and Music, sound for Record and Camera)
+  libarchive 3.7          BSD-2-Clause     https://libarchive.org  (opens .rar, .7z and .tar archives)
   xdg-desktop-portal 1.18, xdg-desktop-portal-gtk 1.15  LGPL-2.1+  (file windows, links and
                           notifications for Flathub apps)
   GTK 3.24, Pango, ATK, cairo, PipeWire client library and their libraries  LGPL-2.1+ (Ubuntu)

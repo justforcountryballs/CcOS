@@ -50,7 +50,7 @@ static int kmap_fd = -1; static uint32_t kmap_size;
 static uint32_t mods_dep, mods_lat, mods_lck, mods_grp;
 
 typedef struct wsurf wsurf;
-typedef struct { int n; int r[8][4]; } wregion;   /* a wl_region: a few rectangles */
+typedef struct { int n; int r[8][4]; int sub; } wregion;   /* a wl_region: a few rectangles (sub: something was cut out) */
 typedef struct wtop wtop;
 
 struct wsurf {
@@ -70,6 +70,9 @@ struct wsurf {
     wsurf *parent; int sx, sy;                 /* role 3 */
     struct wl_resource *subres;
     wsurf *subs[8]; int nsubs;                 /* sub-surfaces drawn on top of this one */
+    int dx0, dy0, dx1, dy1, dset;              /* damage: what changed, since the last commit (pending) */
+    int rx0, ry0, rx1, ry1, rset;              /* ...and in the last commit: only that is copied and drawn again */
+    int op_n, op_r[8][4], pop_n, pop_r[8][4], pop_dirty;   /* opaque region: no need to draw what's under it */
 };
 
 struct wtop {
@@ -248,12 +251,20 @@ static void surf_enter_output(wsurf *s, int depth) {
 static void wl_window_resized_by_app(wtop *t);
 
 static int wl_is_dmabuf(struct wl_resource *buf);
-static int dmabuf_copy(struct wl_resource *buf, uint32_t **px, int *pw, int *ph, int *alpha);
+static int dmabuf_copy(struct wl_resource *buf, uint32_t **px, int *pw, int *ph, int *alpha, const int *rect);
+/* the new picture: only the part the app says changed is copied (all of it when the size changes) */
 static void surf_commit_buffer(wsurf *s) {
+    int rect[4], part = 0;
+    s->rset = 0;
     if (wl_is_dmabuf(s->pbuf)) {                 /* drawn by the graphics chip */
-        int a = 0;
-        if (dmabuf_copy(s->pbuf, &s->px, &s->w, &s->h, &a)) s->alpha = a;
+        int a = 0, ow = s->w, oh = s->h;
+        if (s->dset && s->px && s->alpha >= 0) { rect[0] = s->dx0; rect[1] = s->dy0; rect[2] = s->dx1; rect[3] = s->dy1; part = 1; }
+        if (dmabuf_copy(s->pbuf, &s->px, &s->w, &s->h, &a, part ? rect : NULL)) {
+            s->alpha = a;
+            if (part && s->w == ow && s->h == oh) { s->rx0 = rect[0]; s->ry0 = rect[1]; s->rx1 = rect[2]; s->ry1 = rect[3]; s->rset = 1; }
+        }
         wl_buffer_send_release(s->pbuf);
+        s->dset = 0;
         return;
     }
     struct wl_shm_buffer *b = wl_shm_buffer_get(s->pbuf);
@@ -261,18 +272,24 @@ static void surf_commit_buffer(wsurf *s) {
         int w = wl_shm_buffer_get_width(b), h = wl_shm_buffer_get_height(b);
         int stride = wl_shm_buffer_get_stride(b);
         uint32_t fmt = wl_shm_buffer_get_format(b);
+        int x0 = 0, y0 = 0, x1 = w, y1 = h;
         if (w != s->w || h != s->h || !s->px) {
             free(s->px); s->px = malloc((size_t)w * h * 4);
             s->w = s->px ? w : 0; s->h = s->px ? h : 0;
+        } else if (s->dset) {                                /* same size: just what changed */
+            x0 = imax(0, s->dx0); y0 = imax(0, s->dy0); x1 = imin(w, s->dx1); y1 = imin(h, s->dy1);
+            if (x0 >= x1 || y0 >= y1) { x0 = y0 = x1 = y1 = 0; }
+            s->rx0 = x0; s->ry0 = y0; s->rx1 = x1; s->ry1 = y1; s->rset = 1;
         }
-        if (s->px) {
+        if (s->px && x1 > x0) {
             wl_shm_buffer_begin_access(b);
             const unsigned char *src = wl_shm_buffer_get_data(b);
-            for (int y = 0; y < h; y++) memcpy(s->px + (size_t)y * w, src + (size_t)y * stride, (size_t)w * 4);
+            for (int y = y0; y < y1; y++) memcpy(s->px + (size_t)y * w + x0, src + (size_t)y * stride + (size_t)x0 * 4, (size_t)(x1 - x0) * 4);
             wl_shm_buffer_end_access(b);
         }
         s->alpha = fmt == WL_SHM_FORMAT_ARGB8888;
     }
+    s->dset = 0;
     wl_buffer_send_release(s->pbuf);
 }
 
@@ -280,7 +297,9 @@ static void surf_repaint(wsurf *s) {
     int x, y, win = surf_screen_pos(s, &x, &y);
     if (win < 0 || wins[win].minimized) return;
     int cx, cy, cw, ch; client_rect(&wins[win], &cx, &cy, &cw, &ch);
-    int x0 = imax(x, cx), y0 = imax(y, cy), x1 = imin(x + s->w, cx + cw), y1 = imin(y + s->h, cy + ch);
+    int sx0 = 0, sy0 = 0, sx1 = s->w, sy1 = s->h;
+    if (s->rset) { sx0 = s->rx0; sy0 = s->ry0; sx1 = s->rx1; sy1 = s->ry1; s->rset = 0; if (sx1 <= sx0) return; }   /* only what changed */
+    int x0 = imax(x + sx0, cx), y0 = imax(y + sy0, cy), x1 = imin(x + sx1, cx + cw), y1 = imin(y + sy1, cy + ch);
     if (x0 < x1 && y0 < y1) wl_repaint_later(x0, y0, x1 - x0, y1 - y0);
 }
 
@@ -312,7 +331,14 @@ static void surf_pbuf_gone(struct wl_listener *l, void *data) {
     s->pbuf = NULL;
 }
 static void surf_damage(struct wl_client *c, struct wl_resource *r, int32_t x, int32_t y, int32_t w, int32_t h) {
-    (void)c; (void)r; (void)x; (void)y; (void)w; (void)h;
+    (void)c;
+    wsurf *s = wl_resource_get_user_data(r);
+    if (w <= 0 || h <= 0) return;
+    long long x1 = (long long)x + w, y1 = (long long)y + h;
+    if (x1 > 1 << 20) x1 = 1 << 20;
+    if (y1 > 1 << 20) y1 = 1 << 20;
+    if (!s->dset) { s->dx0 = x; s->dy0 = y; s->dx1 = (int)x1; s->dy1 = (int)y1; s->dset = 1; }
+    else { s->dx0 = imin(s->dx0, x); s->dy0 = imin(s->dy0, y); s->dx1 = imax(s->dx1, (int)x1); s->dy1 = imax(s->dy1, (int)y1); }
 }
 static void frame_gone(struct wl_resource *r) { res_unlink(r); }
 static void surf_frame(struct wl_client *c, struct wl_resource *r, uint32_t id) {
@@ -322,7 +348,14 @@ static void surf_frame(struct wl_client *c, struct wl_resource *r, uint32_t id) 
     wl_resource_set_implementation(cb, NULL, NULL, frame_gone);
     wl_list_insert(s->pframes.prev, wl_resource_get_link(cb));
 }
-static void surf_region(struct wl_client *c, struct wl_resource *r, struct wl_resource *reg) { (void)c; (void)r; (void)reg; }
+static void surf_region(struct wl_client *c, struct wl_resource *r, struct wl_resource *reg) {   /* the opaque region */
+    (void)c;
+    wsurf *s = wl_resource_get_user_data(r);
+    wregion *g = reg ? wl_resource_get_user_data(reg) : NULL;
+    s->pop_dirty = 1;
+    s->pop_n = g && !g->sub ? g->n : 0;
+    if (s->pop_n) memcpy(s->pop_r, g->r, sizeof s->pop_r);
+}
 static void surf_input_region(struct wl_client *c, struct wl_resource *r, struct wl_resource *reg) {
     (void)c;
     wsurf *s = wl_resource_get_user_data(r);
@@ -346,10 +379,12 @@ static void surf_commit(struct wl_client *c, struct wl_resource *r) {
     /* frame callbacks move to "current" */
     struct wl_resource *fr, *ft;
     wl_resource_for_each_safe(fr, ft, &s->pframes) { res_unlink(fr); wl_list_insert(s->frames.prev, wl_resource_get_link(fr)); }
+    if (s->pop_dirty) { s->pop_dirty = 0; s->op_n = s->pop_n; memcpy(s->op_r, s->pop_r, sizeof s->op_r); }
     if (s->pin_dirty) {                                  /* the new input region takes effect */
         s->pin_dirty = 0; s->in_set = s->pin_set; s->in_n = s->pin_n;
         memcpy(s->in_r, s->pin_r, sizeof s->in_r);
     }
+    if (!s->has_pbuf) s->rset = 0;                       /* no new picture: draw it all (it may have moved) */
     if (s->has_pbuf) {
         if (s->pbuf) surf_commit_buffer(s);
         else { free(s->px); s->px = NULL; s->w = s->h = 0; }     /* null buffer: hide */
@@ -429,7 +464,8 @@ static void region_add(struct wl_client *c, struct wl_resource *r, int32_t x, in
     if (g && g->n < 8 && w > 0 && h > 0) { g->r[g->n][0] = x; g->r[g->n][1] = y; g->r[g->n][2] = w; g->r[g->n][3] = h; g->n++; }
 }
 static void region_sub(struct wl_client *c, struct wl_resource *r, int32_t x, int32_t y, int32_t w, int32_t h) {
-    (void)c; (void)r; (void)x; (void)y; (void)w; (void)h;         /* rarely used for input: ignored */
+    (void)c; (void)x; (void)y; (void)w; (void)h;                   /* rarely used for input: ignored */
+    wregion *g = wl_resource_get_user_data(r); if (g) g->sub = 1;   /* (an opaque region with holes: not trusted) */
 }
 static const struct wl_region_interface region_impl = { .destroy = res_destroy, .add = region_add, .subtract = region_sub };
 static void region_gone(struct wl_resource *r) { free(wl_resource_get_user_data(r)); }
@@ -639,6 +675,22 @@ static void top_unmap(wtop *t) {
     t->win = -1;
 }
 
+/* does window win's app picture hide all of (x0,y0)-(x1,y1) on screen? then nothing under it needs drawing */
+static int wl_covers(int win, int x0, int y0, int x1, int y1) {
+    int n = slot_of_win(win);
+    if (n < 0 || !tops[n].s || !tops[n].s->px) return 0;
+    wtop *t = &tops[n]; wsurf *s = t->s;
+    int cx, cy, cw, ch; client_rect(&wins[win], &cx, &cy, &cw, &ch);
+    if (x0 < cx || y0 < cy || x1 > cx + cw || y1 > cy + ch) return 0;
+    int ox = cx - (t->has_geo ? t->gx : 0), oy = cy - (t->has_geo ? t->gy : 0);
+    int sx0 = x0 - ox, sy0 = y0 - oy, sx1 = x1 - ox, sy1 = y1 - oy;      /* in the surface */
+    if (sx0 < 0 || sy0 < 0 || sx1 > s->w || sy1 > s->h) return 0;
+    if (!s->alpha) return 1;
+    for (int i = 0; i < s->op_n; i++)
+        if (sx0 >= s->op_r[i][0] && sy0 >= s->op_r[i][1] && sx1 <= s->op_r[i][0] + s->op_r[i][2] && sy1 <= s->op_r[i][1] + s->op_r[i][3]) return 1;
+    return 0;
+}
+
 /* ---- the desktop's callbacks for a Wayland window ---- */
 static void wl_draw(int n, int cx, int cy, int cw, int ch) {
     wtop *t = &tops[n];
@@ -651,19 +703,26 @@ static void wl_draw(int n, int cx, int cy, int cw, int ch) {
     for (int y = y0; y < y1; y++) {
         uint32_t *d = &back[(size_t)y * W];
         int sy = y - oy;
-        for (int x = x0; x < x1; x++) {
-            int sx = x - ox;
-            if (s && s->px && sx >= 0 && sy >= 0 && sx < s->w && sy < s->h) {
-                uint32_t c = s->px[(size_t)sy * s->w + sx], a = s->alpha ? c >> 24 : 255;
-                if (a == 255) d[x] = c & 0xffffff;
-                else {                                   /* rounded corners: show what's behind */
-                    uint32_t b = d[x];
-                    uint32_t r = ((c >> 16) & 255) + ((b >> 16) & 255) * (255 - a) / 255;
-                    uint32_t g = ((c >> 8) & 255) + ((b >> 8) & 255) * (255 - a) / 255;
-                    uint32_t bl = (c & 255) + (b & 255) * (255 - a) / 255;
-                    d[x] = (imin(r, 255) << 16) | (imin(g, 255) << 8) | imin(bl, 255);
-                }
-            } else d[x] = bg;
+        /* the part of this row the picture covers */
+        int ax = x0, bx = x1;
+        if (s && s->px && sy >= 0 && sy < s->h) { ax = imax(x0, ox); bx = imin(x1, ox + s->w); if (ax > bx) ax = bx = x0; }
+        else ax = bx = x0;
+        for (int x = x0; x < ax; x++) d[x] = bg;
+        for (int x = bx; x < x1; x++) d[x] = bg;
+        if (ax >= bx) continue;
+        const uint32_t *p = s->px + (size_t)sy * s->w - ox;
+        if (!s->alpha) { memcpy(d + ax, p + ax, (size_t)(bx - ax) * 4); continue; }   /* opaque: one copy */
+        for (int x = ax; x < bx; x++) {
+            uint32_t c = p[x], a = c >> 24;
+            if (a == 255) d[x] = c & 0xffffff;
+            else if (a == 0 && !(c & 0xffffff)) continue;
+            else {                                   /* rounded corners: show what's behind */
+                uint32_t b = d[x];
+                uint32_t r = ((c >> 16) & 255) + ((b >> 16) & 255) * (255 - a) / 255;
+                uint32_t g = ((c >> 8) & 255) + ((b >> 8) & 255) * (255 - a) / 255;
+                uint32_t bl = (c & 255) + (b & 255) * (255 - a) / 255;
+                d[x] = (imin(r, 255) << 16) | (imin(g, 255) << 8) | imin(bl, 255);
+            }
         }
     }
     if (!s) return;
@@ -1234,6 +1293,7 @@ static void decom_bind(struct wl_client *c, void *d, uint32_t v, uint32_t id) {
  * ====================================================================== */
 typedef struct { struct wl_resource *res; char mime[16][64]; int n; } wsrc;
 static wsrc *wl_sel;                          /* what was copied last */
+static unsigned char *own_clip; static size_t own_clip_n; static int own_clip_on;   /* ccos's own: a screenshot */
 static struct wl_list wl_devices;             /* wl_data_device resources */
 
 static void src_offer(struct wl_client *c, struct wl_resource *r, const char *mime) {
@@ -1254,6 +1314,11 @@ static void offer_accept(struct wl_client *c, struct wl_resource *r, uint32_t se
 static void offer_receive(struct wl_client *c, struct wl_resource *r, const char *mime, int32_t fd) {
     (void)c; (void)r;
     if (wl_sel) wl_data_source_send_send(wl_sel->res, mime, fd);   /* the copying app writes it straight in */
+    else if (own_clip_on && own_clip && !strcmp(mime, "image/png") && fork() == 0) {   /* ours: written by a helper */
+        size_t off = 0;
+        while (off < own_clip_n) { ssize_t k = write(fd, own_clip + off, own_clip_n - off); if (k <= 0) break; off += (size_t)k; }
+        _exit(0);
+    }
     close(fd);
 }
 static void offer_finish(struct wl_client *c, struct wl_resource *r) { (void)c; (void)r; }
@@ -1266,16 +1331,26 @@ static void wl_send_selection(struct wl_client *to) {
     struct wl_resource *d;
     wl_resource_for_each(d, &wl_devices) {
         if (wl_resource_get_client(d) != to) continue;
-        if (!wl_sel) { wl_data_device_send_selection(d, NULL); continue; }
+        if (!wl_sel && !own_clip_on) { wl_data_device_send_selection(d, NULL); continue; }
         struct wl_resource *o = wl_resource_create(to, &wl_data_offer_interface, wl_resource_get_version(d), 0);
         if (!o) continue;
         wl_resource_set_implementation(o, &offer_impl, NULL, NULL);
         wl_data_device_send_data_offer(d, o);
-        for (int i = 0; i < wl_sel->n; i++) wl_data_offer_send_offer(o, wl_sel->mime[i]);
+        if (wl_sel) for (int i = 0; i < wl_sel->n; i++) wl_data_offer_send_offer(o, wl_sel->mime[i]);
+        else wl_data_offer_send_offer(o, "image/png");
         wl_data_device_send_selection(d, o);
     }
 }
 
+/* ccos puts a picture on the clipboard (a screenshot) */
+static void wl_clip_set_png(const unsigned char *png, size_t n) {
+    unsigned char *c = malloc(n);
+    if (!c) return;
+    memcpy(c, png, n);
+    free(own_clip); own_clip = c; own_clip_n = n; own_clip_on = 1;
+    if (wl_sel) { wl_data_source_send_cancelled(wl_sel->res); wl_sel = NULL; }
+    if (kb_focus) wl_send_selection(wl_resource_get_client(kb_focus->res));
+}
 static void dev_start_drag(struct wl_client *c, struct wl_resource *r, struct wl_resource *src, struct wl_resource *origin, struct wl_resource *icon, uint32_t serial) {
     (void)c; (void)r; (void)origin; (void)icon; (void)serial;
     if (src) wl_data_source_send_cancelled(src);        /* no drag and drop yet */
@@ -1285,6 +1360,7 @@ static void dev_set_selection(struct wl_client *c, struct wl_resource *r, struct
     wsrc *s = src ? wl_resource_get_user_data(src) : NULL;
     if (wl_sel && wl_sel != s) wl_data_source_send_cancelled(wl_sel->res);
     wl_sel = s;
+    own_clip_on = 0;
     if (kb_focus) wl_send_selection(wl_resource_get_client(kb_focus->res));
 }
 static const struct wl_data_device_interface dev_impl = {
