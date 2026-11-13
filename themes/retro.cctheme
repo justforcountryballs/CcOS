@@ -1,0 +1,9 @@
+name=Retro Terminal
+style=modern
+dark=1
+accent=33d17a
+folder=green
+cursor=green
+wallpaper=snowy-lake
+gtk=dark
+colors=title=0c0f0c title_in=101410 border_in=1e2a1e text=b8f5c8 sub=6fbf85 bar=080a08 bar_line=1a241a bar_hover=162016 menu=0c0f0c menu_left=111611 menu_line=1e2a1e btn=162016

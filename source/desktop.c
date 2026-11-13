@@ -1,5 +1,5 @@
 /*
- * ccos desktop - a tiny Windows 7 style desktop for ccos
+ * ccos desktop - a small modern desktop for ccos
  *
  * Draws straight to the Linux framebuffer (/dev/fb0) and reads the mouse
  * and keyboard from evdev (/dev/input/event*). No X11, no libraries.
@@ -66,7 +66,7 @@
 
 /* ---- icons ---------------------------------------------------------- */
 enum { ICON_NONE, ICON_GEAR, ICON_CALC, ICON_NOTE, ICON_MINE, ICON_FOLDER, ICON_FILE, ICON_DRIVE, ICON_COMPUTER, ICON_GLOBE, ICON_TERMINAL, ICON_APP, ICON_CARDS, ICON_BAG, ICON_PHOTO, ICON_VIDEO, ICON_MUSIC,
-       ICON_FOLDER_IMG, ICON_FOLDER_DL, ICON_FOLDER_VID, ICON_USB, ICON_BATTERY, ICON_MOON, ICON_SUN, ICON_PRINTER, ICON_ZIP, ICON_BIN, ICON_BIN_FULL, ICON_CAMERA, ICON_RECORD, ICON_SEARCH, ICON_PAINT, ICON_CALENDAR, ICON_SYSMON };   /* coloured folders: Images, Downloads, Videos */
+       ICON_FOLDER_IMG, ICON_FOLDER_DL, ICON_FOLDER_VID, ICON_USB, ICON_BATTERY, ICON_MOON, ICON_SUN, ICON_PRINTER, ICON_ZIP, ICON_BIN, ICON_BIN_FULL, ICON_CAMERA, ICON_RECORD, ICON_SEARCH, ICON_PAINT, ICON_CALENDAR, ICON_SYSMON, ICON_THEMES };   /* coloured folders: Images, Downloads, Videos */
 #define ICON_IMG 1000              /* ICON_IMG + n: an app's own picture (Flathub apps) */
 
 /* ===================================================================
@@ -79,7 +79,7 @@ enum { ICON_NONE, ICON_GEAR, ICON_CALC, ICON_NOTE, ICON_MINE, ICON_FOLDER, ICON_
 typedef struct { const char *label; const char *cmd; int icon; } MenuItem;
 
 #define FP_MENU 4                  /* Flatpak apps shown in the start menu */
-#define NBUILTIN 16                /* built-in programs in the start menu */
+#define NBUILTIN 17                /* built-in programs in the start menu */
 static MenuItem left_items[NBUILTIN + FP_MENU + 1] = {   /* white panel (programs); Flatpak apps are added after these */
     { "Terminal", "@terminal", ICON_TERMINAL },
     { "File Explorer", "@explorer", ICON_FOLDER },
@@ -95,6 +95,7 @@ static MenuItem left_items[NBUILTIN + FP_MENU + 1] = {   /* white panel (program
     { "Paint", "@paint", ICON_PAINT },
     { "Calendar", "@calendar", ICON_CALENDAR },
     { "System Monitor", "@sysmon", ICON_SYSMON },
+    { "Themes", "@themes", ICON_THEMES },
     { "Software Manager", "@store", ICON_BAG },
     { "Settings", "@settings", ICON_GEAR },
     { NULL, NULL, 0 }
@@ -177,8 +178,8 @@ static const char *wf_names[NWF] = { "Fill", "Fit", "Stretch", "Tile", "Center",
 static int set_muted;
 static int set_net = 1;       /* networking on */
 static int set_wifi = 1;      /* Wi-Fi radio on */
-static int set_smooth = 0;    /* smooth (anti-aliased) font: on in the Modern style */
-static int set_style = 0;     /* 0 Classic (glass, blocky font), 1 Modern (flat, smooth) */
+static int set_smooth = 1;    /* smooth (anti-aliased) font: on in the Modern style */
+static int set_style = 1;     /* always 1 (Modern); the old Classic look is gone */
 static int set_dark = 0;      /* Modern: 0 light, 1 dark */
 static int set_cursor_col = 1;   /* mouse pointer colour: 0 white, 1 black, 2 blue */
 static int set_cursor_size = 0;  /* mouse pointer size: 0 normal, 1 large, 2 extra large */
@@ -220,7 +221,7 @@ static const AppInfo apps[] = {
     { "@store", "Software Manager", ICON_BAG },
     { "@photos", "Photos", ICON_PHOTO }, { "@videos", "Videos", ICON_VIDEO }, { "@music", "Music", ICON_MUSIC },
     { "@camera", "Camera", ICON_CAMERA }, { "@record", "Record", ICON_RECORD },
-    { "@paint", "Paint", ICON_PAINT }, { "@calendar", "Calendar", ICON_CALENDAR }, { "@sysmon", "System Monitor", ICON_SYSMON },
+    { "@paint", "Paint", ICON_PAINT }, { "@calendar", "Calendar", ICON_CALENDAR }, { "@sysmon", "System Monitor", ICON_SYSMON }, { "@themes", "Themes", ICON_THEMES },
 };
 /* ---- apps installed with Flatpak (from Flathub) -------------------
  * Flatpak puts a .desktop file for each one in its "exports" folder;
@@ -313,6 +314,7 @@ static void bg_sync(void) {
     bgsync_pid = p > 0 ? p : 0;
 }
 static void bg_sync_tick(void) { if (bgsync_again && !(bgsync_pid > 0 && kill(bgsync_pid, 0) == 0)) bg_sync(); }
+#include "asyncwrite.c"          /* saving without freezing */
 #include "bin.c"                 /* the Recycle Bin */
 static void repaint_all(void);
 static void desk_bin_changed(void) {          /* the desktop Bin: empty or full */
@@ -430,7 +432,17 @@ static int pin_index(const char *cmd) {
 /* ---- layout ------------------------------------------------------ */
 static int set_dock;             /* the taskbar as a Dock (dock.c) */
 static int set_anim = 1;         /* window animations (anim.c) */
-#define DOCK_RES   76         /* the bottom strip the Dock keeps for itself */
+static uint32_t set_accent;      /* Themes: accent colour (0 = the style's own blue), as 0x1rrggbb */
+static int set_folder;           /* Themes: folder colour, 0 = yellow */
+static int set_dock_size = 1;    /* Themes: 0 small, 1 normal, 2 large Dock */
+static char set_gtk[64];         /* Themes: how Flathub apps look ("" default, "dark", or a GTK theme) */
+static char set_theme[64];       /* Themes: the name of the last complete theme picked */
+static char set_tover[600];      /* Themes: a theme's own colours ("title=rrggbb ...") */
+static int th_ver;               /* bumped when any of these change */
+static char set_browser[96];     /* Quick Search's browser (quicksearch.c) */
+static int set_engine;           /* and search site */
+#define DOCK_RES   (dock_b() + 28)   /* the bottom strip the Dock keeps for itself */
+static int dock_b(void) { return set_dock_size == 0 ? 40 : set_dock_size == 2 ? 58 : 48; }
 #define TASKBAR_H  (set_dock ? DOCK_RES : 40)
 #define TBI_H      40         /* clock, network, battery: their strip */
 #define TBI_Y      (H - TBI_H - (set_dock ? 14 : 0))
@@ -909,7 +921,38 @@ static const Theme th_dark = {
     .menu = RGB(0x22, 0x24, 0x28), .menu_left = RGB(0x2c, 0x2e, 0x33), .menu_line = RGB(0x3c, 0x3f, 0x44),
     .hover = RGB(0x3a, 0x44, 0x52), .hover_line = RGB(0x4e, 0x5e, 0x74), .btn = RGB(0x38, 0x3a, 0x40), .btn_hover = RGB(0x40, 0x50, 0x68),
 };
-static const Theme *TH(void) { return set_dark ? &th_dark : &th_light; }
+/* the colours in use: light or dark, with the Themes app's accent colour and a theme's own colours */
+static const char *th_keys[] = { "title", "title_in", "border", "border_in", "text", "text_in", "sub", "bar", "bar_line", "bar_hover",
+                                 "bar_active", "accent", "menu", "menu_left", "menu_line", "hover", "hover_line", "btn", "btn_hover" };
+static const Theme *TH(void) {
+    static Theme cur; static int kd = -1, kv = -1; static uint32_t ka;
+    if (kd == !!set_dark && kv == th_ver && ka == set_accent) return &cur;
+    kd = !!set_dark; kv = th_ver; ka = set_accent;
+    cur = set_dark ? th_dark : th_light;
+    if (set_accent) {
+        uint32_t a = set_accent & 0xffffff;
+        cur.accent = a;
+        if (set_dark) {
+            cur.border = mix(a, RGB(0x20, 0x22, 0x26), 0.15f); cur.hover = mix(a, RGB(0x22, 0x24, 0x28), 0.72f);
+            cur.hover_line = mix(a, RGB(0x22, 0x24, 0x28), 0.45f); cur.bar_active = mix(a, RGB(0x1c, 0x1d, 0x20), 0.68f);
+            cur.btn_hover = mix(a, RGB(0x38, 0x3a, 0x40), 0.6f);
+        } else {
+            cur.border = mix(a, RGB(255, 255, 255), 0.2f); cur.hover = mix(a, RGB(255, 255, 255), 0.87f);
+            cur.hover_line = mix(a, RGB(255, 255, 255), 0.6f); cur.bar_active = mix(a, RGB(0xf2, 0xf3, 0xf5), 0.8f);
+            cur.btn_hover = mix(a, RGB(255, 255, 255), 0.8f);
+        }
+    }
+    /* a theme's own colours: "key=rrggbb key=rrggbb ..." */
+    for (const char *p = set_tover; *p; ) {
+        while (*p == ' ') p++;
+        char kname[24]; unsigned v; int n = 0;
+        if (sscanf(p, "%23[a-z_]=%x%n", kname, &v, &n) == 2 && n > 0) {
+            for (size_t i = 0; i < sizeof th_keys / sizeof th_keys[0]; i++) if (!strcmp(kname, th_keys[i])) ((uint32_t *)&cur)[i] = v & 0xffffff;
+            p += n;
+        } else { while (*p && *p != ' ') p++; }
+    }
+    return &cur;
+}
 #define MODERN (set_style == 1)
 #define DARK   (set_style == 1 && set_dark)
 
@@ -1049,7 +1092,9 @@ static void draw_search_icon(int cx, int cy, int r);
 static void draw_paint_icon(int cx, int cy, int r);
 static void draw_calendar_icon(int cx, int cy, int r);
 static void draw_sysmon_icon(int cx, int cy, int r);
+static void draw_themes_icon(int cx, int cy, int r);
 static void draw_icon_raw(int icon, int cx, int cy, int r) {
+    if (icon == ICON_THEMES) { draw_themes_icon(cx, cy, r); return; }
     if (icon >= ICON_IMG) draw_img_icon(icon - ICON_IMG, cx, cy, r);
     else if (icon == ICON_PAINT) draw_paint_icon(cx, cy, r);
     else if (icon == ICON_CALENDAR) draw_calendar_icon(cx, cy, r);
@@ -1153,12 +1198,14 @@ static int set_wallpaper_file(const char *src) {
     save_settings();
     return 1;
 }
+#include "glass.c"                /* frosted glass behind frames, taskbar, start menu */
 static void make_wallpaper(void) {
     for (size_t i = 0; i < (size_t)W * H; i++) wall[i] = RGB(0x20, 0x2c, 0x3c);
     char p[200]; snprintf(p, sizeof p, WALL_DIR "/%s.jpg", wallpapers[set_wall].file);
     int iw, ih, c; uint8_t *px = stbi_load(p, &iw, &ih, &c, 4);
     if (px) { wall_blit(px, iw, ih, WF_FILL); stbi_image_free(px); }
     wall_picture();                                   /* the user's own picture, on top */
+    glass_make();
 }
 
 /* ---- settings file -------------------------------------------------- */
@@ -1179,11 +1226,20 @@ static void load_settings(void) {
         if (sscanf(line, "muted=%d", &v) == 1) set_muted = !!v;
         if (sscanf(line, "net=%d", &v) == 1) set_net = !!v;
         if (sscanf(line, "wifi=%d", &v) == 1) set_wifi = !!v;
-        if (sscanf(line, "style=%d", &v) == 1) set_style = set_smooth = !!v;
+        if (sscanf(line, "style=%d", &v) == 1) set_style = set_smooth = 1;   /* (ccos is Modern only since 1.6) */
         if (sscanf(line, "dock=%d", &v) == 1) set_dock = !!v;
         if (sscanf(line, "anim=%d", &v) == 1) set_anim = !!v;
+        if (!strncmp(line, "browser=", 8)) { snprintf(set_browser, sizeof set_browser, "%s", line + 8); set_browser[strcspn(set_browser, "\r\n")] = 0; }
+        if (sscanf(line, "engine=%d", &v) == 1 && v >= 0 && v < 3) set_engine = v;
+        { unsigned u; if (sscanf(line, "accent=%x", &u) == 1) set_accent = u; }
+        if (sscanf(line, "folder=%d", &v) == 1 && v >= 0 && v < 8) set_folder = v;
+        if (sscanf(line, "docksize=%d", &v) == 1 && v >= 0 && v < 3) set_dock_size = v;
+        if (sscanf(line, "glass=%d", &v) == 1 && v >= 0 && v <= 100) set_glass = v;
+        if (!strncmp(line, "gtktheme=", 9)) { snprintf(set_gtk, sizeof set_gtk, "%s", line + 9); set_gtk[strcspn(set_gtk, "\r\n")] = 0; }
+        if (!strncmp(line, "theme=", 6)) { snprintf(set_theme, sizeof set_theme, "%s", line + 6); set_theme[strcspn(set_theme, "\r\n")] = 0; }
+        if (!strncmp(line, "themecolors=", 12)) { snprintf(set_tover, sizeof set_tover, "%s", line + 12); set_tover[strcspn(set_tover, "\r\n")] = 0; th_ver++; }
         if (sscanf(line, "dark=%d", &v) == 1) set_dark = !!v;
-        if (sscanf(line, "cursor2=%d", &v) == 1 && v >= 0 && v < 3) set_cursor_col = v;   /* (the old "cursor=" was the old pointer: black is the new look) */
+        if (sscanf(line, "cursor2=%d", &v) == 1 && v >= 0 && v < 8) set_cursor_col = v;   /* (the old "cursor=" was the old pointer: black is the new look) */
         if (sscanf(line, "cursorsize=%d", &v) == 1 && v >= 0 && v < 3) set_cursor_size = v;
         if (sscanf(line, "tpspeed=%d", &v) == 1 && v >= 0 && v < 3) set_tp_speed = v;
         if (sscanf(line, "bright=%d", &v) == 1 && v >= 5 && v <= 100) set_bright = v;
@@ -1246,7 +1302,8 @@ static void save_settings(void) {
         if (stat("/data", &a) == 0 && stat("/", &b) == 0 && a.st_dev != b.st_dev) { stick_late_check(); return; }
     }
     mkdir("/data", 0755);
-    FILE *f = fopen(CONF_PATH ".tmp", "w");
+    char *mbuf = NULL; size_t mlen = 0;
+    FILE *f = open_memstream(&mbuf, &mlen);     /* written in memory, saved by the helper thread */
     if (!f) return;
     fprintf(f, "wallpic=%d\nclock24=%d\nsound=%d\nnet=%d\nwifi=%d\nfont=%d\n", set_wall, set_clock24, set_sound, set_net, set_wifi, set_smooth);
     fprintf(f, "volume=%d\nmuted=%d\nstyle=%d\ndark=%d\ndock=%d\nanim=%d\n", set_volume, set_muted, set_style, set_dark, set_dock, set_anim);
@@ -1259,11 +1316,15 @@ static void save_settings(void) {
     if (set_upd_api[0]) fprintf(f, "upd_api=%s\n", set_upd_api);
     for (int i = 0; i < NDESK; i++) fprintf(f, "desk=%d,%d,%s|%s\n", desk_icons[i].col, desk_icons[i].row, desk_icons[i].cmd, desk_icons[i].label);
     fprintf(f, "fpknown=%s\nstoreicon=1\n", fp_known);
+    fprintf(f, "browser=%s\nengine=%d\n", set_browser, set_engine);
+    fprintf(f, "glass=%d\n", set_glass);
+    fprintf(f, "accent=%x\nfolder=%d\ndocksize=%d\ngtktheme=%s\ntheme=%s\nthemecolors=%s\n", set_accent, set_folder, set_dock_size, set_gtk, set_theme, set_tover);
     fprintf(f, "pins=");
     for (int i = 0; i < npins; i++) fprintf(f, "%s%s", i ? "," : "", pins[i]);
     fprintf(f, "\n");
-    fflush(f); fclose(f);
-    rename(CONF_PATH ".tmp", CONF_PATH);         /* atomic: never half-written */
+    fclose(f);
+    if (mbuf) aw_save(CONF_PATH, mbuf, mlen, 1, "your settings");   /* atomic: never half-written */
+    free(mbuf);
     bg_sync();
 }
 
@@ -1279,7 +1340,8 @@ static void check_persistent(void) {             /* is /data its own disk? */
 typedef struct {
     int open, minimized, maximized;
     int x, y, w, h;               /* outer rectangle on screen        */
-    int rx, ry, rw, rh;           /* size/position before maximizing */
+    int rx, ry, rw, rh;           /* size/position before maximizing (or snapping) */
+    int snap;                     /* snapped to a half or quarter (snap.c) */
     const char *title;
     int icon;
     void (*draw)(int cx, int cy, int cw, int ch);     /* paint the content */
@@ -1344,7 +1406,7 @@ static int content_drag = -1;          /* window whose content is being dragged 
 static long long last_click_ms; static int last_click_win = -1;
 
 /* what the mouse is pointing at ("hot"), so it can be highlighted */
-enum { HOT_NONE, HOT_ORB, HOT_SD, HOT_LITEM, HOT_RITEM, HOT_CAP, HOT_TASK, HOT_CONTENT, HOT_ICON, HOT_POPUP, HOT_TRAY, HOT_NETP, HOT_BAT, HOT_CLOCK, HOT_CLKP, HOT_SRES, HOT_SBOX, HOT_REC, HOT_DOCKBIN, HOT_DPOWER, HOT_BELL, HOT_NC, HOT_CH };
+enum { HOT_NONE, HOT_ORB, HOT_SD, HOT_LITEM, HOT_RITEM, HOT_CAP, HOT_TASK, HOT_CONTENT, HOT_ICON, HOT_POPUP, HOT_TRAY, HOT_NETP, HOT_BAT, HOT_CLOCK, HOT_CLKP, HOT_SRES, HOT_SBOX, HOT_REC, HOT_DOCKBIN, HOT_DPOWER, HOT_BELL, HOT_NC, HOT_CH, HOT_QS };
 typedef struct { int type, a, b; } Hot;
 static Hot hot;
 
@@ -1441,7 +1503,7 @@ static int di_at_mouse(void) {
 #define POP_IH 26
 enum { PA_NONE, PA_OPEN, PA_PIN, PA_UNPIN, PA_CLOSE, PA_DESK_ADD, PA_DESK_DEL, PA_OPEN_FILE, PA_SET_WALL, PA_CUSTOMIZE, PA_EJECT, PA_PRINT,
        PA_CUT, PA_COPY, PA_PASTE, PA_RENAME, PA_DELETE, PA_ZIP, PA_UNZIP, PA_NEWFOLDER, PA_SELALL, PA_RESTORE, PA_RESTOREALL, PA_EMPTYBIN,
-       PA_NEWMENU, PA_NEWFILE /* .. PA_NEWFILE + 7: File Explorer's New > list */, PA_SLEEP = PA_NEWFILE + 20, PA_RESTART, PA_SHUTDOWN, PA_PAINT };
+       PA_NEWMENU, PA_NEWFILE /* .. PA_NEWFILE + 7: File Explorer's New > list */, PA_SLEEP = PA_NEWFILE + 20, PA_RESTART, PA_SHUTDOWN, PA_PAINT, PA_LOCATION };
 #define POP_SUBMAX 8
 #define SUB_W 236
 static struct {
@@ -2225,6 +2287,8 @@ static void aa_line(float x0, float y0, float x1, float y1, float wdt, uint32_t 
 static int rec_on(void);
 static int finder_running(void);
 static int nc_open, ch_open;
+static int qs_open_(void); static int qs_hit(void); static void draw_quicksearch(void); static void qs_set(int open);
+static void qs_click(int id); static void qs_key(int code, int mods); static void qs_repaint(void);
 static int nc_hit(void); static int ch_hit(void);
 static void draw_bell(void); static void draw_nc(void); static void draw_ch(void);
 static int bell_x(void); static void nc_repaint(void); static void repaint_bell(void); static void ch_repaint(void);
@@ -2233,6 +2297,7 @@ static void ch_key(int code); static void ch_wheel(int amount); static void nc_w
 #include "dock.c"                 /* the taskbar's other look: a Dock */
 
 static Hot find_hot(void) {
+    if (qs_open_()) { Hot h0 = { HOT_NONE, 0, 0 }; int id = qs_hit(); if (id >= 0) { h0.type = HOT_QS; h0.a = id; } if (id != -1) return h0; }
     if (ch_open) { Hot h0 = { HOT_NONE, 0, 0 }; int id = ch_hit(); if (id >= 0) { h0.type = HOT_CH; h0.a = id; } if (id != -1) return h0; }
     if (nc_open) { Hot h0 = { HOT_NONE, 0, 0 }; int id = nc_hit(); if (id >= 0) { h0.type = HOT_NC; h0.a = id; } if (id != -1) return h0; }
     Hot h = { HOT_NONE, 0, 0 };
@@ -2459,7 +2524,7 @@ static void draw_taskbar(void) {
     else {
     if (clip_y1 <= y0) return;
     if (set_style) {
-        fill_rect(0, y0, W, TASKBAR_H, TH()->bar, 255);
+        glass_fill(0, y0, W, TASKBAR_H, 0, TH()->bar, 0, 0, 0, 0);
         fill_rect(0, y0, W, 1, TH()->bar_line, 255);
     } else {
         fill_rect(0, y0, W, TASKBAR_H, RGB(0x0c, 0x1c, 0x2c), 175);
@@ -2520,7 +2585,7 @@ static void draw_menu(void) {
     if (set_style) {                                       /* Modern: a flat panel */
         const Theme *T = TH();
         for (int k = 1; k <= 3; k++) fill_round(x - k + 2, y - k + 3, MENU_W + 2 * k - 2, MENU_H + 2 * k - 2, 8 + k, RGB(0, 0, 0), 14);
-        fill_round(x, y, MENU_W, MENU_H, 8, T->menu, 255);
+        glass_fill(x, y, MENU_W, MENU_H, 8, T->menu, 0, 0, 0, 0);
         stroke_round(x, y, MENU_W, MENU_H, 8, T->menu_line, 255);
         fill_round(LP_X, LP_Y, LP_W, LP_H, 6, T->menu_left, 255);
         stroke_round(LP_X, LP_Y, LP_W, LP_H, 6, T->menu_line, 255);
@@ -2667,6 +2732,10 @@ static void draw_caption_button(Win *w, int idx, int b) {
 
 static void draw_window(int idx);
 #include "anim.c"                 /* windows pour into the Dock, grow in, fade out */
+#include "snap.c"                 /* windows snap to the edges */
+static void draw_alttab(void); static void draw_hover_preview(void); static void at_tab(int back_); static void at_finish(int go);
+static int hp_tick(void); static int hp_click(void); static void hp_hide(void);
+static int at_open_(void);
 static void draw_window(int idx) {
     Win *w = &wins[idx];
     if (!w->open || w->minimized || anim_hides(idx)) return;
@@ -2680,7 +2749,7 @@ static void draw_window(int idx) {
         if (!w->fullscreen) {
             for (int k = 1; k <= 4; k++)                       /* a soft shadow */
                 fill_round(w->x - k + 2, w->y - k + 4, w->w + 2 * k - 4, w->h + 2 * k - 4, 6 + k, RGB(0, 0, 0), act ? 16 : 9);
-            fill_rect(w->x, w->y, w->w, w->h, act ? T->title : T->title_in, 255);
+            glass_fill(w->x, w->y, w->w, w->h, 0, act ? T->title : T->title_in, cx, cy, cw, ch);
             stroke_round(w->x, w->y, w->w, w->h, 1, act ? T->border : T->border_in, 255);
         }
         fill_rect(cx, cy, cw, ch, RGB(0xff, 0xff, 0xff), 255);
@@ -2766,6 +2835,11 @@ static const float dbl_pts[] = { -11, 0, -5.5f, -5.5f, -5.5f, -2.1f, 5.5f, -2.1f
 static void cursor_colors(int col, uint32_t *fill, uint32_t *edge) {
     if (col == 1)      { *fill = RGB(0x12, 0x12, 0x14); *edge = RGB(255, 255, 255); }
     else if (col == 2) { *fill = RGB(0x2e, 0x8c, 0xf0); *edge = RGB(255, 255, 255); }
+    else if (col == 3) { *fill = RGB(0xe8, 0x34, 0x34); *edge = RGB(255, 255, 255); }
+    else if (col == 4) { *fill = RGB(0x2c, 0xb8, 0x50); *edge = RGB(255, 255, 255); }
+    else if (col == 5) { *fill = RGB(0x8c, 0x4c, 0xe8); *edge = RGB(255, 255, 255); }
+    else if (col == 6) { *fill = RGB(0xf0, 0x5c, 0xb0); *edge = RGB(255, 255, 255); }
+    else if (col == 7) { *fill = RGB(0xff, 0xd0, 0x20); *edge = RGB(0x20, 0x20, 0x20); }
     else               { *fill = RGB(255, 255, 255);    *edge = RGB(0, 0, 0); }
 }
 /* the area (around the hot spot) any pointer of size s can cover */
@@ -2889,6 +2963,9 @@ static void st_line(int cx, int cw, int y) { fill_rect(cx + 24, y, cw - 48, 1, R
 #define LK_PIC_Y  (ST_Y + 150)     /* background picture */
 #define LK_FONT_Y (ST_Y + 360)
 #define LK_POS_W  72
+#define LK_GL_X   24
+#define LK_GL_W   300
+static int st_glass_drag;
 #define VOL_Y     150          /* volume slider row (from the page top) */
 #define VOL_X     60
 #define VOL_R     60
@@ -3163,9 +3240,10 @@ int capslock_on(void) { return capslock_state; }
 
 /* switch between Classic and Modern (and light / dark): windows keep their content size */
 static void style_set(int style, int dark) {
-    if (style == set_style && dark == set_dark) return;
+    if (set_style == 1 && dark == set_dark) return;
     int oldf = FRAME;
-    set_style = style; set_dark = dark; set_smooth = style;
+    (void)style; style = 1;                         /* Modern only */
+    set_style = 1; set_dark = dark; set_smooth = 1;
     int d = FRAME - oldf;
     for (int i = 0; i < MAXWIN; i++) {
         Win *w = &wins[i];
@@ -3241,10 +3319,20 @@ static void settings_draw(int cx, int cy, int cw, int ch) {
             }
         }
         st_line(cx, cw, cy + LK_FONT_Y - 24);
-        st_heading(cx, cy + LK_FONT_Y - 12, "Style");
-        st_choice(cx + 24, cy + LK_FONT_Y + 12, 150, 30, "Classic", set_style == 0);
-        st_choice(cx + 24 + 162, cy + LK_FONT_Y + 12, 150, 30, "Modern", set_style == 1);
-        draw_text(cx + 24, cy + LK_FONT_Y + 50, set_style ? "Flat windows, smooth text and icons" : "Glass windows, blocky pixel text", grey, 255);
+        st_heading(cx, cy + LK_FONT_Y - 12, "Mode");
+        st_choice(cx + 24, cy + LK_FONT_Y + 12, 150, 30, "Light", !set_dark);
+        st_choice(cx + 24 + 162, cy + LK_FONT_Y + 12, 150, 30, "Dark", set_dark);
+        {   /* Glass: how much of the background shows through frames, the taskbar and the start menu */
+            char gl[32]; snprintf(gl, sizeof gl, "Glass  %d%%", set_glass);
+            draw_text(cx + 24, cy + LK_FONT_Y + 60, gl, text, 255);
+            int sx = cx + LK_GL_X, sw = LK_GL_W, sy = cy + LK_FONT_Y + 92;
+            fill_round(sx, sy - 3, sw, 6, 3, RGB(0xc8, 0xcc, 0xd2), 255);
+            fill_round(sx, sy - 3, sw * set_glass / 100, 6, 3, TH()->accent, 255);
+            fill_circle(sx + sw * set_glass / 100.0f, sy, 9, RGB(255, 255, 255), 255);
+            stroke_round(sx + sw * set_glass / 100 - 9, sy - 9, 18, 18, 9, RGB(0x90, 0x98, 0xa4), 255);
+            draw_text(cx + 24, cy + LK_FONT_Y + 108, "Solid", grey, 255);
+            draw_text(cx + LK_GL_X + LK_GL_W - text_w("Most glass"), cy + LK_FONT_Y + 108, "Most glass", grey, 255);
+        }
         draw_text_bold(cx + 372, cy + LK_FONT_Y - 12, "Taskbar", RGB(0x1e, 0x39, 0x87));
         st_choice(cx + 372, cy + LK_FONT_Y + 12, 130, 30, "Bar", set_dock == 0);
         st_choice(cx + 514, cy + LK_FONT_Y + 12, 130, 30, "Dock", set_dock == 1);
@@ -3252,11 +3340,7 @@ static void settings_draw(int cx, int cy, int cw, int ch) {
         draw_text(cx + 372, cy + LK_FONT_Y + 68, set_dock ? "at them; /o\\ opens Finder" : "and the clock", grey, 255);
         draw_text(cx + 372, cy + LK_FONT_Y + 106, "Window animations", text, 255);
         st_switch(cx + cw - 24 - TG_W, cy + LK_FONT_Y + 102, set_anim);
-        if (set_style) {
-            draw_text(cx + 24, cy + LK_FONT_Y + 80, "Mode", text, 255);
-            st_choice(cx + 24, cy + LK_FONT_Y + 100, 150, 30, "Light", !set_dark);
-            st_choice(cx + 24 + 162, cy + LK_FONT_Y + 100, 150, 30, "Dark", set_dark);
-        }
+        draw_text(cx + 372, cy + LK_FONT_Y + 140, "More looks: the Themes app", grey, 255);
         break;
     }
     case TAB_CLOCK: {
@@ -3471,6 +3555,11 @@ static void settings_wheel(int amount) {
 }
 static void settings_drag(int lx, int ly, int cw, int ch) {      /* moving the volume slider */
     (void)ly; (void)ch;
+    if (st_glass_drag && st_tab == TAB_LOOK) {
+        int v = clampi((lx - LK_GL_X) * 100 / LK_GL_W, 0, 100);
+        if (v != set_glass) { set_glass = v; repaint_all(); }
+        return;
+    }
     if (st_br_drag && st_tab == TAB_POWER) {
         int v = clampi((lx - VOL_X) * 100 / (cw - VOL_X - VOL_R), 5, 100);
         if (v != set_bright) bright_set(v, 0);
@@ -3481,8 +3570,10 @@ static void settings_drag(int lx, int ly, int cw, int ch) {      /* moving the v
     int v = clampi((lx - VOL_X) * 100 / bw, 0, 100);
     if (v != set_volume || set_muted) volume_set(v, 0, 0);
 }
+static void settings_release(void) { if (st_glass_drag) { st_glass_drag = 0; save_settings(); } }
 static void settings_click(int lx, int ly, int cw, int ch) {
-    st_vol_drag = st_br_drag = 0;
+    if (st_glass_drag) save_settings();
+    st_vol_drag = st_br_drag = st_glass_drag = 0;
     (void)ch;
     for (int i = 0; i < NTABS; i++) {                     /* tabs */
         int tx, tw; st_tab_rect(i, &tx, &tw);
@@ -3520,16 +3611,16 @@ static void settings_click(int lx, int ly, int cw, int ch) {
                 }
             }
         }
+        if (ly >= LK_FONT_Y + 78 && ly < LK_FONT_Y + 106 && lx >= LK_GL_X - 12 && lx < LK_GL_X + LK_GL_W + 12) {
+            st_glass_drag = 1; settings_drag(lx, ly, cw, ch); return;
+        }
         if (ly >= LK_FONT_Y + 12 && ly < LK_FONT_Y + 42) {
-            if (lx >= 24 && lx < 174) style_set(0, set_dark);
-            else if (lx >= 186 && lx < 336) style_set(1, set_dark);
+            if (lx >= 24 && lx < 174) style_set(1, 0);
+            else if (lx >= 186 && lx < 336) style_set(1, 1);
             else if (lx >= 372 && lx < 502) dock_set(0);
             else if (lx >= 514 && lx < 644) dock_set(1);
         } else if (ly >= LK_FONT_Y + 96 && ly < LK_FONT_Y + 132 && lx >= 372) {
             set_anim = !set_anim; save_settings(); st_repaint();
-        } else if (set_style && ly >= LK_FONT_Y + 100 && ly < LK_FONT_Y + 130) {
-            if (lx >= 24 && lx < 174) style_set(1, 0);
-            else if (lx >= 186 && lx < 336) style_set(1, 1);
         }
         return;
     case TAB_CLOCK:
@@ -3908,15 +3999,19 @@ static void repaint(int x, int y, int w, int h) {
         draw_desk_icons();
         from = 0;
     }
-    for (int k = from; k < nz; k++) draw_window(zorder[k]);
+    for (int k = from; k < nz; k++) { if (snap_zone && k == nz - 1) snap_draw(); draw_window(zorder[k]); }
+    if (snap_zone && from >= nz) snap_draw();
     wl_draw_popups();                                       /* menus of Wayland apps */
     anim_draw();
+    draw_hover_preview();
     if (menu_open) draw_menu();
     if (!taskbar_hidden()) draw_taskbar();
     if (net_panel) draw_net_panel();
     if (clk_panel) draw_clock_panel(hot.type == HOT_CLKP ? hot.a : 0);
     draw_nc();
     draw_ch();
+    draw_alttab();
+    draw_quicksearch();
     draw_osd();
     draw_toasts();
     if (pop.open) {                                         /* right-click menu, on top of all */
@@ -4017,6 +4112,7 @@ static void repaint_hot(Hot h) {
     case HOT_BELL:  repaint_bell(); break;
     case HOT_NC:    nc_repaint(); break;
     case HOT_CH:    ch_repaint(); break;
+    case HOT_QS:    qs_repaint(); break;
     case HOT_SD:    power_rect(h.a, &x, &y, &w, &hh); repaint(x, y, w, hh); break;
     case HOT_LITEM: repaint(LI_X, ITEMS_Y + h.a * ITEM_H, LI_W, ITEM_H); break;
     case HOT_SRES: repaint(LI_X, ITEMS_Y + h.a * ITEM_H, LI_W, ITEM_H); if (h.a != ms_sel) repaint(LI_X, ITEMS_Y + ms_sel * ITEM_H, LI_W, ITEM_H); break;
@@ -4100,7 +4196,8 @@ static void toggle_max(int idx) {
     if (w->fullscreen) { set_fullscreen(idx, 0); return; }
     int ox = w->x, oy = w->y, ow = w->w, oh = w->h;    /* old area */
     if (!w->maximized) {
-        w->rx = w->x; w->ry = w->y; w->rw = w->w; w->rh = w->h;
+        if (!w->snap) { w->rx = w->x; w->ry = w->y; w->rw = w->w; w->rh = w->h; }
+        w->snap = 0;
         w->x = 0; w->y = 0; w->w = W; w->h = H - TASKBAR_H;
         w->maximized = 1;
     } else {
@@ -4805,10 +4902,9 @@ static int np_write(void) {                     /* save to np_file; 1 on success
     mkdir("/data", 0755); mkdir(NP_DIR, 0755);
     if (strncmp(np_dir, "/data", 5)) snprintf(np_dir, sizeof np_dir, "%s", NP_DIR);   /* system files are read-only */
     snprintf(path, sizeof path, "%s/%s", np_dir, np_file);
-    FILE *f = fopen(path, "w");
-    if (!f) { np_info("Could not save the file.", "Is the save disk working?"); return 0; }
-    fwrite(np_buf, 1, np_len, f);
-    fflush(f); fclose(f); bg_sync();
+    if (access(np_dir, W_OK)) { np_info("Could not save the file.", "Is the save disk working?"); return 0; }
+    if (!aw_save(path, np_buf, (size_t)np_len, 1, np_file)) { np_info("Could not save the file.", "Not enough memory."); return 0; }
+    bg_sync();
     np_modified = 0;
     np_set_title();
     return 1;
@@ -5438,8 +5534,13 @@ static void run(const char *cmd);
 #define ID_EXNAV   3100
 #define ID_EXCRUMB 3200
 #define ID_EXDRIVE 3400
+#define ID_EXSEARCH 3500
+#define EX_SEARCH_W(cw) ((cw) >= 560 ? 210 : 0)   /* the search box, right of the address */
+static char ex_q[64]; static int ex_sfocus;          /* File Explorer search */
+static long long ex_search_fill(void);
+static void ms_scan_files(void);
 
-typedef struct { char name[64]; int dir, link; long long size; time_t mtime; } ExItem;
+typedef struct { char name[256]; int dir, link; long long size; time_t mtime; } ExItem;   /* name: in a search, the path from the folder */
 static ExItem ex_items[EX_MAX];
 static int  ex_n, ex_sel = -1, ex_scroll;
 static unsigned char ex_mark[EX_MAX];          /* selected rows, when several are (ex_multi) */
@@ -5718,6 +5819,7 @@ static void ex_child(char *out, size_t n, const char *name) {
 
 /* read the folder; returns a signature so changes can be noticed */
 static long long ex_read(void) {
+    if (ex_q[0] && ex_path[0]) return ex_search_fill();
     ex_n = 0;
     long long sig = 0;
     if (!ex_path[0]) return 0;
@@ -5760,6 +5862,7 @@ static void ex_go(const char *path, int remember) {
         snprintf(ex_hist[ex_nhist++], sizeof ex_hist[0], "%s", ex_path);
     }
     snprintf(ex_path, sizeof ex_path, "%s", path);
+    ex_q[0] = 0; ex_sfocus = 0;                       /* another folder: the search is over */
     if (!strcmp(ex_path, "/data/Documents")) { mkdir("/data", 0755); mkdir(NP_DIR, 0755); }
     ex_make_special();
     ex_sig = ex_read();
@@ -5859,12 +5962,24 @@ static int ex_crumb_x(char labels[][40], int i) {
 }
 
 /* ---- icons (also used by the start menu) --------------------------- */
+/* folder colours (Themes > Icons): tab, top, bottom, edge */
+static const uint32_t folder_cols[8][4] = {
+    { RGB(0xd8, 0xa8, 0x3c), RGB(0xfc, 0xe4, 0x98), RGB(0xe8, 0xb0, 0x40), RGB(0xb0, 0x80, 0x24) },   /* yellow */
+    { RGB(0x3a, 0x7c, 0xd0), RGB(0xa8, 0xd4, 0xff), RGB(0x4a, 0x90, 0xe8), RGB(0x1e, 0x56, 0xa8) },   /* blue */
+    { RGB(0x3a, 0xa0, 0x48), RGB(0xb4, 0xf0, 0xa8), RGB(0x4c, 0xb8, 0x50), RGB(0x24, 0x7c, 0x30) },   /* green */
+    { RGB(0xc8, 0x3c, 0x3c), RGB(0xff, 0xb4, 0xa8), RGB(0xe0, 0x50, 0x48), RGB(0x98, 0x24, 0x24) },   /* red */
+    { RGB(0x84, 0x48, 0xc8), RGB(0xdc, 0xbc, 0xff), RGB(0x98, 0x5c, 0xe0), RGB(0x60, 0x2c, 0xa0) },   /* purple */
+    { RGB(0x70, 0x78, 0x84), RGB(0xd8, 0xdc, 0xe2), RGB(0x8c, 0x94, 0xa0), RGB(0x50, 0x58, 0x64) },   /* grey */
+    { RGB(0xe0, 0x78, 0x20), RGB(0xff, 0xd0, 0x98), RGB(0xf0, 0x8c, 0x30), RGB(0xb0, 0x58, 0x10) },   /* orange */
+    { RGB(0xd0, 0x4c, 0x90), RGB(0xff, 0xc0, 0xe0), RGB(0xe8, 0x64, 0xa8), RGB(0xa0, 0x30, 0x6c) },   /* pink */
+};
 static void draw_folder_icon(int cx, int cy, int r) {
+    const uint32_t *c = folder_cols[set_folder & 7];
     int w = r * 2, h = r * 3 / 2, x = cx - r, y = cy - h / 2;
-    fill_round(x, y - 2, w / 2, 5, 2, RGB(0xd8, 0xa8, 0x3c), 255);                     /* tab */
-    fill_round_grad(x, y, w, h, 2, RGB(0xfc, 0xe4, 0x98), RGB(0xe8, 0xb0, 0x40), 255);
+    fill_round(x, y - 2, w / 2, 5, 2, c[0], 255);                                       /* tab */
+    fill_round_grad(x, y, w, h, 2, c[1], c[2], 255);
     fill_rect(x + 1, y + 2, w - 2, 2, RGB(255, 255, 255), 80);
-    stroke_round(x, y, w, h, 2, RGB(0xb0, 0x80, 0x24), 230);
+    stroke_round(x, y, w, h, 2, c[3], 230);
 }
 /* the special folders: blue Images, green Downloads, purple Videos, each with a little sign */
 static void draw_folder_tinted(int cx, int cy, int r, int kind) {
@@ -6129,7 +6244,25 @@ static void explorer_draw(int cx, int cy, int cw, int ch) {
         stroke_round((int)bx - 12, (int)by - 12, 24, 24, 12, en ? RGB(0x10, 0x3c, 0x78) : RGB(0x90, 0x98, 0xa4), 255);
         draw_text_bold((int)bx - 4, (int)by - 8, b == 0 ? "\x11" : "\x18", RGB(255, 255, 255));
     }
-    int ax = cx + 84, aw = cw - 92;
+    int ax = cx + 84, aw = cw - 92 - (EX_SEARCH_W(cw) ? EX_SEARCH_W(cw) + 8 : 0);
+    if (EX_SEARCH_W(cw)) {                              /* the search box */
+        int sx = cx + cw - 8 - EX_SEARCH_W(cw), sw = EX_SEARCH_W(cw), on = ex_sfocus || ex_q[0];
+        fill_rect(sx, cy + 7, sw, 26, RGB(255, 255, 255), 255);
+        stroke_round(sx, cy + 7, sw, 26, 2, on ? RGB(0x3c, 0x84, 0xd8) : hotid == ID_EXSEARCH ? RGB(0x6c, 0x9c, 0xd8) : RGB(0x8c, 0xa4, 0xc4), 255);
+        draw_icon(ICON_SEARCH, sx + sw - 14, cy + 20, 6);
+        char ph[48];
+        if (ex_q[0]) {
+            char q[64]; snprintf(q, sizeof q, "%s", ex_q);
+            while (q[0] && text_w(q) > sw - 34) memmove(q, q + u8_next(q, (int)strlen(q), 0), strlen(q));
+            draw_text(sx + 6, cy + 12, q, RGB(0x10, 0x10, 0x10), 255);
+            if (ex_sfocus) fill_rect(sx + 7 + text_w(q), cy + 12, 1, 16, RGB(0x10, 0x10, 0x10), 255);
+        } else {
+            snprintf(ph, sizeof ph, "Search %s", ex_path[0] ? ex_title : "D:");
+            while (ph[0] && text_w(ph) > sw - 34) ph[u8_prev(ph, (int)strlen(ph))] = 0;
+            draw_text(sx + 6, cy + 12, ph, RGB(0x8a, 0x94, 0xa0), 255);
+            if (ex_sfocus) fill_rect(sx + 6, cy + 12, 1, 16, RGB(0x10, 0x10, 0x10), 255);
+        }
+    }
     fill_rect(ax, cy + 7, aw, 26, RGB(255, 255, 255), 255);
     stroke_round(ax, cy + 7, aw, 26, 2, RGB(0x8c, 0xa4, 0xc4), 255);
     char labels[EX_MAXCRUMB][40], paths[EX_MAXCRUMB][256];
@@ -6139,6 +6272,10 @@ static void explorer_draw(int cx, int cy, int cw, int ch) {
         int x = cx + ex_crumb_x(labels, i) - 104 + 84 + 20;
         int w = text_w(labels[i]) + 12;
         if (x + w > ax + aw - 4) break;
+        if (ex_q[0] && i == nc - 1) {                                  /* searching: say so after the folder */
+            char sr[80]; snprintf(sr, sizeof sr, "\x10 Search results");
+            if (x + w + text_w(sr) < ax + aw - 6) draw_text(x + w + 1, cy + 12, sr, RGB(0x50, 0x50, 0x50), 255);
+        }
         if (hotid == ID_EXCRUMB + i) {
             fill_round(x - 2, cy + 9, w, 22, 2, RGB(0xe5, 0xf3, 0xfb), 255);
             stroke_round(x - 2, cy + 9, w, 22, 2, RGB(0xb8, 0xd6, 0xfb), 255);
@@ -6208,7 +6345,7 @@ static void explorer_draw(int cx, int cy, int cw, int ch) {
         fill_rect(mx0, my0 + EX_HDR_H - 1, lw, 1, RGB(0xe2, 0xe6, 0xec), 255);
         draw_text(mx0 + 30, my0 + 4, "Name", RGB(0x4c, 0x60, 0x7a), 255);
         draw_text(col_date, my0 + 4, "Date modified", RGB(0x4c, 0x60, 0x7a), 255);
-        draw_text(col_type, my0 + 4, "Type", RGB(0x4c, 0x60, 0x7a), 255);
+        draw_text(col_type, my0 + 4, ex_q[0] ? "Folder" : "Type", RGB(0x4c, 0x60, 0x7a), 255);
         draw_text(col_size - 32, my0 + 4, "Size", RGB(0x4c, 0x60, 0x7a), 255);
         for (int c = 0; c < 3; c++)
             fill_rect((c == 0 ? col_date : c == 1 ? col_type : col_size - 72) - 8, my0 + 3, 1, EX_HDR_H - 6,
@@ -6234,7 +6371,11 @@ static void explorer_draw(int cx, int cy, int cw, int ch) {
                       !strcmp(ty, "Application") ? launcher_icon(it->name) : ICON_FILE,
                       mx0 + 16, y + EX_ROW_H / 2, 7);
             char nm[64]; int maxc = imax(4, (col_date - mx0 - 40) / 8);
-            snprintf(nm, sizeof nm, "%s", it->name);
+            const char *base_ = strrchr(it->name, '/');
+            snprintf(nm, sizeof nm, "%s", base_ ? base_ + 1 : it->name);
+            char where[80];
+            if (base_) { snprintf(where, sizeof where, "%.*s", (int)(base_ - it->name), it->name); ty = where; }
+            else if (ex_q[0]) { snprintf(where, sizeof where, "(here)"); ty = where; }
             if (text_len(nm) > maxc) { u8_trunc(nm, maxc - 2); strcat(nm, ".."); }
             draw_text(mx0 + 30, y + 3, nm, faded ? RGB(0x90, 0x90, 0x90) : RGB(0x10, 0x10, 0x10), 255);
             char dt[32]; struct tm tm; localtime_r(&it->mtime, &tm);
@@ -6304,6 +6445,7 @@ static int explorer_hit(int lx, int ly, int cw, int ch) {
         int bx = 22 + b * 30, by = EX_NAV_H / 2;
         if ((lx - bx) * (lx - bx) + (ly - by) * (ly - by) <= 144) return ID_EXBACK + b;
     }
+    if (ly < EX_NAV_H && EX_SEARCH_W(cw) && lx >= cw - 8 - EX_SEARCH_W(cw) && lx < cw - 8 && ly >= 7 && ly < 33) return ID_EXSEARCH;
     if (ly < EX_NAV_H) {
         char labels[EX_MAXCRUMB][40], paths[EX_MAXCRUMB][256];
         int nc = ex_crumbs(labels, paths);
@@ -6346,6 +6488,7 @@ static void explorer_elem_rect(int id, int *x, int *y, int *w, int *h) {
     if (dlg_elem_rect(&ex_dlg, id, cw, ch, x, y, w, h)) return;
     if (id == ID_EXBACK || id == ID_EXUP) { *x = 8 + (id - ID_EXBACK) * 30; *y = 6; *w = 30; *h = 30; return; }
     if (id >= ID_EXCRUMB && id < ID_EXCRUMB + EX_MAXCRUMB) { *x = 84; *y = 7; *w = cw - 92; *h = 26; return; }
+    if (id == ID_EXSEARCH) { *x = cw - 10 - EX_SEARCH_W(cw); *y = 5; *w = EX_SEARCH_W(cw) + 4; *h = 30; return; }
     if (id >= ID_EXCMD && id < ID_EXCMD + EX_NCMD) { ex_cmd_rect(id - ID_EXCMD, x, y, w, h); return; }
     if (id >= ID_EXNAV && id < ID_EXNAV + EX_NNAV) { *x = 0; *y = ex_nav_y(id - ID_EXNAV); *w = EX_LEFT_W; *h = 22; return; }
     if (id >= ID_EXDRIVE && id < ID_EXDRIVE + EX_NDRIVE) { ex_drive_rect(id - ID_EXDRIVE, cw, x, y, w, h); return; }
@@ -6448,6 +6591,7 @@ static void explorer_rclick(int lx, int ly, int cw, int ch) {
     int ns = ex_nselected(), mk = ex_items[id].dir ? 0 : media_kind(ex_items[id].name);
     int img = ns == 1 && mk == MK_IMAGE && media_kind(p) == MK_IMAGE && !strstr(p, ".svg");
     if (ns == 1) ADD("Open", PA_OPEN_FILE);
+    if (ns == 1 && ex_q[0]) ADD("Open file location", PA_LOCATION);
     if (ns == 1 && ex_is_archive(ex_items[id].name)) ADD("Extract all", PA_UNZIP);
     ADD("Cut", PA_CUT);
     ADD("Copy", PA_COPY);
@@ -6515,6 +6659,7 @@ static void ex_new_file(int k) {
 static void ex_rename(void) {
     if (ex_sel < 0 || ex_nselected() != 1) return;
     if (!ex_writable()) { ex_need_writable(); return; }
+    if (strchr(ex_items[ex_sel].name, '/')) { ex_info("To rename it, open its folder first.", "(Right-click > Open file location.)"); return; }
     ex_dlg_mode = EXD_RENAME;
     dlg_open(&ex_dlg, DLG_INPUT, "Rename", "New name:", NULL, "Rename", "Cancel", NULL, ex_dlg_done);
     snprintf(ex_dlg.field, sizeof ex_dlg.field, "%s", ex_items[ex_sel].name);
@@ -6670,6 +6815,8 @@ static void explorer_click(int lx, int ly, int cw, int ch) {
     int id = explorer_hit(lx, ly, cw, ch);
     explorer_press(lx, ly, cw, ch, id);
     char p[256];
+    if (id == ID_EXSEARCH) { if (!ex_sfocus) { ex_sfocus = 1; ms_scan_files(); } repaint_client(explorer_draw); return; }
+    if (ex_sfocus && id != ID_EXSEARCH) { ex_sfocus = 0; repaint_client(explorer_draw); }
     if (id == ID_EXBACK) {
         if (ex_nhist) { ex_nhist--; snprintf(p, sizeof p, "%s", ex_hist[ex_nhist]); ex_go(p, 0); }
     } else if (id == ID_EXUP) {
@@ -6712,8 +6859,12 @@ static void explorer_click(int lx, int ly, int cw, int ch) {
     }
 }
 
+static void ex_search_key(int code, int mods);
 static void explorer_key(int code, int mods) {
     if (dlg_key(&ex_dlg, code, mods, explorer_draw)) return;
+    if ((mods & MOD_CTRL) && code == KEY_F) { ex_sfocus = 1; ms_scan_files(); repaint_client(explorer_draw); return; }
+    if (ex_sfocus) { ex_search_key(code, mods); return; }
+    if (code == KEY_ESC && ex_q[0]) { ex_q[0] = 0; ex_sig = ex_read(); ex_single(-1); ex_set_title(); return; }
     if (mods & MOD_CTRL) {
         if (code == KEY_C) ex_clip(0);
         else if (code == KEY_X) ex_clip(1);
@@ -6766,7 +6917,7 @@ static void explorer_tick(void) {               /* notice files saved by other a
 }
 
 #include "cp437map.h"                 /* letters for Wi-Fi names */
-static int wake_pipe[2] = { -1, -1 };
+/* wake_pipe: declared in asyncwrite.c */
 #include "wayland.c"            /* real Linux apps (Wayland) in ccos windows */
 #include "cliphist.c"           /* Windows + V: what was copied */
 #include "notifcenter.c"        /* the bell: notifications kept */
@@ -6989,6 +7140,7 @@ static void restore_console(void) {
 static void paint_open(const char *path);
 static void calendar_open(void);
 static void sysmon_open(void);
+static void themes_open(void);
 static void run(const char *cmd) {
     if (!cmd) return;
     if (!strncmp(cmd, "flatpak:", 8)) {               /* an app from Flathub */
@@ -7019,6 +7171,7 @@ static void run(const char *cmd) {
         if (!strcmp(cmd, "@paint") || !strncmp(cmd, "@paint ", 7)) { paint_open(cmd[6] ? cmd + 7 : NULL); return; }
         if (!strcmp(cmd, "@calendar")) { calendar_open(); return; }
         if (!strcmp(cmd, "@sysmon")) { sysmon_open(); return; }
+        if (!strcmp(cmd, "@themes")) { themes_open(); return; }
         if (!strcmp(cmd, "@record")) {
             static const Win t = { .title = "Record", .icon = ICON_RECORD, .no_max = 1, .draw = rec_draw, .click = rec_click,
                                    .hit = rec_hit, .tick = rec_app_tick };
@@ -7033,7 +7186,7 @@ static void run(const char *cmd) {
         }
         if (!strcmp(cmd, "@settings")) {
             static const Win t = { .title = "Settings", .icon = ICON_GEAR, .no_max = 1,
-                                   .draw = settings_draw, .click = settings_click, .drag = settings_drag,
+                                   .draw = settings_draw, .click = settings_click, .drag = settings_drag, .release = settings_release,
                                    .key = settings_key, .wheel = settings_wheel,
                                    .tick = settings_tick };
             open_win(&t, ST_W, ST_H);
@@ -7138,6 +7291,7 @@ static void run(const char *cmd) {
 
 /* hand the screen to the shutdown script: "poweroff", "reboot" or "shell" */
 static void power_action(const char *mode) {
+    aw_flush(8000);                          /* let the last saves finish */
     execl("/sbin/ccos-shutdown", "ccos-shutdown", mode, (char *)NULL);
     restore_console();                       /* only if the script is missing */
     execl("/bin/busybox", "poweroff", "-f", (char *)NULL);
@@ -7246,6 +7400,13 @@ static void pop_do(int i) {
     if (act == PA_RESTART) { power_action("reboot"); return; }
     if (act == PA_SHUTDOWN) { power_action("poweroff"); return; }
     if (act == PA_OPEN_FILE) { open_file(path); update_hover(); return; }
+    if (act == PA_LOCATION) {                    /* a search result: its folder, with it picked */
+        char d[512]; snprintf(d, sizeof d, "%s", path);
+        char *sl = strrchr(d, '/'); if (!sl) return;
+        char nm[256]; snprintf(nm, sizeof nm, "%s", sl + 1);
+        if (sl == d) d[1] = 0; else *sl = 0;
+        ex_go(d, 1); ex_select_name(nm); repaint_client(explorer_draw); return;
+    }
     if (act == PA_SET_WALL) {
         if (set_wallpaper_file(path)) { make_wallpaper(); repaint_all(); if (win_of(settings_draw) >= 0) st_repaint(); }
         update_hover(); return;
@@ -7296,6 +7457,8 @@ static void net_panel_set(int open) {
 
 static void press(void) {
     update_hover();
+    if (hp_click()) return;                      /* the window picture over the Dock / taskbar */
+    if (qs_open_()) { if (hot.type == HOT_QS) qs_click(hot.a); else if (qs_hit() == -1) qs_set(0); return; }
     if (ch_open) { if (hot.type == HOT_CH) ch_click(hot.a); else if (ch_hit() == -1) ch_set(0); return; }
     if (hot.type == HOT_BELL) { pop_close(); set_menu(0); net_panel_set(0); clk_panel_set(0); nc_set(!nc_open); return; }
     if (nc_open) {
@@ -7381,7 +7544,7 @@ static void press(void) {
                 last_click_win = -1; return;
             }
             last_click_win = i; last_click_ms = t;
-            if (!w->maximized) { drag_win = i; drag_dx = mx - w->x; drag_dy = my - w->y; }
+            if (!w->fullscreen) snap_drag_start(i);
         }
         return;
     }
@@ -7516,6 +7679,7 @@ static void left_button(int down) {
         press();
     }
     if (!down) {
+        if (drag_win >= 0) snap_drag_end();
         drag_win = -1; content_drag = -1; rz_win = -1;
         di_drop();
         for (int i = 0; i < MAXWIN; i++)
@@ -7606,10 +7770,16 @@ static int touchpad_event(int d, const struct input_event *v) {
 #include "record.c"               /* Record: the screen into a video */
 #include "camera.c"               /* Camera: the webcam */
 #include "menusearch.c"           /* type in the Start menu */
+#include "exsearch.c"             /* File Explorer's search box */
 #include "finder.c"               /* Finder: the Dock's first icon */
+#include "alttab.c"               /* Alt + Tab, and window pictures over the Dock / taskbar */
+static int at_open_(void) { return at.open; }
+#include "quicksearch.c"          /* Windows + Space */
+static int qs_open_(void) { return qs.open; }
 #include "paint.c"                /* Paint */
 #include "calendar.c"             /* Calendar, with reminders */
 #include "sysmon.c"               /* System Monitor */
+#include "themes.c"               /* Themes: the brush */
 #include "screenshot.c"           /* Print Screen and Win+Shift+S */
 #include "stickwait.c"            /* waiting for the USB boot stick before loading settings */
 int main(void) {
@@ -7745,11 +7915,13 @@ int main(void) {
         if ((ms_scanning || bgsync_again) && wait_ms > 100) wait_ms = 100;   /* waiting for a helper */
         { int d = dock_tick(); if (d >= 0 && d < wait_ms) wait_ms = d; }
         { int d = anim_tick(); if (d >= 0 && d < wait_ms) wait_ms = d; }
+        { int d = hp_tick(); if (d >= 0 && d < wait_ms) wait_ms = d; }
 
         int polled = poll(pfd, n, wait_ms);
         rec_tick();                                        /* Record: a picture of the screen */
         bg_sync_tick();
         ch_tick();
+        aw_tick();
         ms_tick();                                         /* Start menu search: files read */
         osd_wait();                                        /* hide the popup when its time is up */
         toast_wait();
@@ -7828,6 +8000,17 @@ int main(void) {
                             continue;
                         }
                         mx = clampi(mx, 0, W - 1); my = clampi(my, 0, H - 1);
+                        /* Alt + Tab */
+                        if (v->code == KEY_LEFTSHIFT || v->code == KEY_RIGHTSHIFT) shift_held = down;
+                        if (v->code == KEY_LEFTALT || v->code == KEY_RIGHTALT) { alt_held = down; if (!down && at_open_()) at_finish(1); }
+                        if (v->code == KEY_TAB && alt_held && v->value) { at_tab(shift_held); continue; }
+                        if (at_open_() && v->code < BTN_MISC && v->code != KEY_LEFTALT && v->code != KEY_RIGHTALT && v->code != KEY_LEFTSHIFT && v->code != KEY_RIGHTSHIFT) {
+                            if (v->value == 1 && v->code == KEY_ESC) at_finish(0);
+                            if (v->value && (v->code == KEY_RIGHT || v->code == KEY_DOWN)) at_tab(0);
+                            if (v->value && (v->code == KEY_LEFT || v->code == KEY_UP)) at_tab(1);
+                            if (v->value == 1 && (v->code == KEY_ENTER || v->code == KEY_KPENTER)) at_finish(1);
+                            continue;
+                        }
                         /* ccos's own keys, whatever app is active: Windows key, Print Screen, Win+Shift+S */
                         if (v->code == KEY_LEFTMETA || v->code == KEY_RIGHTMETA) {
                             if (v->value == 1) { meta_down = 1; meta_used = 0; }
@@ -7850,6 +8033,8 @@ int main(void) {
                                 if (v->value == 1 && v->code == KEY_S && shift) snip_start();
                                 if (v->value == 1 && v->code == KEY_R && alt) rec_toggle();
                                 if (v->value == 1 && v->code == KEY_V) ch_set(!ch_open);
+                                if (v->value == 1 && v->code == KEY_SPACE) qs_set(!qs_open_());
+                                if (v->value == 1 && (v->code == KEY_LEFT || v->code == KEY_RIGHT || v->code == KEY_UP || v->code == KEY_DOWN)) snap_key(v->code);
                                 continue;
                             }
                         }
@@ -7862,7 +8047,7 @@ int main(void) {
                                 if (v->value == 1) set_fullscreen(a, !wins[a].fullscreen);   /* X11 apps: ccos does F11 */
                                 continue;
                             }
-                            if (is_key && !ours && a >= 0 && wins[a].rawkey && !menu_open && !net_panel && !pop.open && !ch_open) {
+                            if (is_key && !ours && a >= 0 && wins[a].rawkey && !menu_open && !net_panel && !pop.open && !ch_open && !qs_open_()) {
                                 if (v->code == KEY_LEFTSHIFT || v->code == KEY_RIGHTSHIFT) shift = down;
                                 if (v->code == KEY_LEFTCTRL || v->code == KEY_RIGHTCTRL) ctrl = down;
                                 if (v->code == KEY_LEFTALT || (v->code == KEY_RIGHTALT && set_kbd != KBD_PL)) alt = down;
@@ -7897,6 +8082,7 @@ int main(void) {
                             /* fall through: otherwise it goes to the active app */
                         default:
                             if (!down) break;
+                            if (qs_open_()) { qs_key(v->code, (shift ? MOD_SHIFT : 0) | (ctrl ? MOD_CTRL : 0) | (altgr ? MOD_ALTGR : 0)); break; }
                             if (ch_open) { ch_key(v->code); break; }
                             if (nc_open && v->code == KEY_ESC) { nc_set(0); break; }
                             if (net_panel) { net_key(v->code, (shift ? MOD_SHIFT : 0) | (ctrl ? MOD_CTRL : 0)); break; }
@@ -7928,7 +8114,7 @@ int main(void) {
         my = clampi(my, 0, H - 1);
         if (moved && snip_on) snip_motion();
         else if (moved) {
-            if (drag_win >= 0) move_win(drag_win, mx - drag_dx, my - drag_dy);
+            if (drag_win >= 0) snap_drag_motion();
             if (rz_win >= 0 && mouse_down) resize_follow();
             di_follow_mouse();
             wl_popup_motion();                              /* over a Wayland app's menu? */
