@@ -142,7 +142,7 @@ static void pt_tool_icon(int t, int cx, int cy, uint32_t c) {
     }
 }
 static void paint_draw(int cx, int cy, int cw, int ch) {
-    const int dark = set_style && set_dark;
+    const int dark = 0;   /* (in dark mode, ccos darkens windows like this one itself) */
     uint32_t bar = dark ? RGB(0x2a, 0x2b, 0x30) : RGB(0xf3, 0xf5, 0xf8), text = dark ? RGB(0xe8, 0xea, 0xee) : RGB(0x1e, 0x22, 0x28);
     fill_rect(cx, cy, cw, PT_BAR, bar, 255);
     fill_rect(cx, cy + PT_BAR - 1, cw, 1, dark ? RGB(0x44, 0x46, 0x4c) : RGB(0xd4, 0xd8, 0xde), 255);
@@ -216,9 +216,8 @@ static void pt_save(void) {
         snprintf(p, sizeof p, "/data/Images/Drawing %s.png", b);
     }
     size_t n; unsigned char *png = png_encode(pt.px, pt.w, 0, 0, pt.w, pt.h, &n);
-    FILE *f = png ? fopen(p, "wb") : NULL;
-    int ok = f && fwrite(png, 1, n, f) == n;
-    if (f) fclose(f);
+    const char *nm0 = strrchr(p, '/');
+    int ok = png && aw_save(p, png, n, 1, nm0 ? nm0 + 1 : p);
     free(png);
     if (ok) {
         snprintf(pt.path, sizeof pt.path, "%s", p); pt.dirty = 0; bg_sync();

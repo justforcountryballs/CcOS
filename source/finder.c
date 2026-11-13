@@ -152,7 +152,7 @@ static void fd_grid(int cw, int ch, int *gx, int *gy, int *cols, int *gh) {
     *gx = FD_SIDE + 12; *gy = FD_TOP; *cols = imax(1, (cw - FD_SIDE - 24) / FD_TW); *gh = ch - FD_TOP - 4;
 }
 static void finder_draw(int cx, int cy, int cw, int ch) {
-    const int dark = set_style && set_dark;
+    const int dark = 0;   /* (in dark mode, ccos darkens windows like this one itself) */
     uint32_t bg = dark ? RGB(0x20, 0x21, 0x24) : RGB(255, 255, 255), side = dark ? RGB(0x2a, 0x2b, 0x30) : RGB(0xf2, 0xf4, 0xf8);
     uint32_t text = dark ? RGB(0xe8, 0xea, 0xee) : RGB(0x1e, 0x22, 0x28), grey = dark ? RGB(0x9a, 0xa0, 0xaa) : RGB(0x70, 0x78, 0x84);
     fill_rect(cx, cy, cw, ch, bg, 255);
@@ -297,5 +297,5 @@ static void finder_open(void) {
                            .elem_rect = finder_elem_rect, .key = finder_key, .wheel = finder_wheel, .wake = finder_wake,
                            .on_close = finder_on_close };
     int w = open_win(&t, imin(W - 60, FD_W), imin(H - TASKBAR_H - 60, FD_H));
-    if (w >= 0) snprintf(wins[w].cmd, sizeof wins[0].cmd, "@finder");
+    if (w >= 0) { snprintf(wins[w].cmd, sizeof wins[0].cmd, "@finder"); repaint_taskbar(); }
 }

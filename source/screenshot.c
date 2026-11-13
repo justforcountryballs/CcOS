@@ -57,9 +57,7 @@ static void shot_save(const uint32_t *src, int x, int y, int w, int h) {
     char p[200], base[100]; strftime(base, sizeof base, "Screenshot %Y-%m-%d %H-%M-%S", &tm);
     snprintf(p, sizeof p, SHOT_DIR "/%s.png", base);
     for (int k = 2; access(p, F_OK) == 0 && k < 100; k++) snprintf(p, sizeof p, SHOT_DIR "/%s (%d).png", base, k);
-    FILE *f = fopen(p, "wb");
-    int ok = f && fwrite(png, 1, n, f) == n;
-    if (f && fclose(f)) ok = 0;
+    int ok = aw_save(p, png, n, 0, "the screenshot");
     wl_clip_set_png(png, n);
     free(png);
     if (ok) toast(ICON_PHOTO, "Screenshot saved", "In Images > Screenshots, and on the clipboard: paste it into an app.");

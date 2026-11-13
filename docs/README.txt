@@ -119,6 +119,32 @@ Desktop controls:
   The bell (right of the clock)      notification centre: every notification is
                                      kept here after its card goes away. The
                                      number on the bell is how many you missed.
+  Alt + Tab                          switch windows: hold Alt, tap Tab to step
+                                     through big previews (Shift goes back),
+                                     let go of Alt to switch. Esc cancels.
+  Pointing at a taskbar / Dock app   after a moment a small live preview of
+                                     its window(s) pops up; click one to go
+                                     to it.
+  Window snapping                    drag a window to the left or right edge
+                                     for half the screen, into a corner for a
+                                     quarter, or to the top to maximize. A
+                                     see-through box shows where it lands.
+                                     Drag it away to get its old size back.
+                                     Windows + arrow keys do the same.
+  Windows + Space                    Quick Search (like Spotlight). The first
+                                     time it asks which browser to use. Type
+                                     words (cake recipe) and Enter searches
+                                     the web in that browser; type an address
+                                     (https://..., youtu.be/...) and it opens
+                                     that site. It also finds apps, Settings
+                                     and files as you type.
+  Saving                             settings, Notepad, Paint, Calendar and
+                                     screenshots now save in the background,
+                                     so a slow USB stick no longer freezes
+                                     the desktop while it writes.
+                                     If ccos still freezes for a second or more,
+                                     it writes down what it was waiting for in
+                                     D:\ccos-freeze-log.txt (handy for bug reports).
   Start menu search                  open the start menu and just type: apps,
                                      Settings pages ("wifi", "time", "dark")
                                      and files/folders on D: and in Downloads.
@@ -132,6 +158,15 @@ Desktop controls:
   Ctrl+Alt+Backspace                 quit to the shell (type: desktop  to go back)
 
 Apps (start menu):
+  Themes       (brush icon) whole looks in one click: ccos Light/Dark,
+               Mint, Mint Dark, Nord, Dracula, Sunset, Rose. Tabs to
+               fine-tune Windows (Light/Dark, Glass slider, accent colour),
+               Taskbar (Bar or Dock, Dock size, animations), Icons (folder
+               colour), Mouse pointer (colour and size) and Apps (the look
+               of Flathub apps: default, dark, or GTK themes you install
+               from Flathub right there; restart the app to see it).
+               Get more downloads extra themes from the ccos GitHub page.
+               Both download lists have a search box (or Ctrl+F).
   Terminal     a real Linux terminal (foot). Type commands like on the plain
                command line, but in a window: several at once, mouse selection,
                copy = Ctrl+Shift+C, paste = Ctrl+Shift+V, scroll with the wheel.
@@ -160,11 +195,13 @@ Apps (start menu):
                what's in Documents, Downloads, Pictures, Videos and Music.
                Double-clicking a picture, video or sound in File Explorer
                opens the right one. Firefox saves downloads to Downloads.
-  Style (Settings > Appearance): Classic is the glass look with the blocky
-               pixel font. Modern is flat and solid, with the smooth font,
-               smooth icons and new _ [] X buttons; it has Light and Dark
-               modes. Dark mode also darkens ccos's own apps (Photos,
-               Videos, Solitaire and Flathub apps keep their own colours).
+  Look (Settings > Appearance, or the Themes app): one modern style
+               with the smooth font, Light and Dark modes, and a Glass
+               slider (0-100%) for how much of a frosted copy of the
+               background shows through window frames, the taskbar and the
+               start menu (even at 100% there is still some frosting).
+               Dark mode also darkens ccos's own apps (Photos, Videos,
+               Solitaire and Flathub apps keep their own colours).
   Desktop background: Settings > Appearance has 7 pictures made for ccos
                (Water is the first one). Or use your own: right-click a picture
                in File Explorer > Set as desktop background. Right-click an
@@ -203,6 +240,9 @@ Apps (start menu):
                D: = ccos Data (the save disk: your settings and files)
                Double-click a folder to open it, a text file to open it in
                Notepad. New folder / Rename (F2) / Delete work on D: only.
+               Search box (top right, or Ctrl+F): finds files and folders
+               in the folder you're in and everything under it. Right-click a
+               result > Open file location jumps to its folder.
   Record       records the whole screen into a video (MP4) in Videos. Click
                the red button: the window gets out of the way and a red
                "REC 0:12" button on the taskbar counts; click it (or press

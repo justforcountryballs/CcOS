@@ -139,7 +139,7 @@ static void sm_graph(int x, int y, int w, int h, const float *v, int n, uint32_t
 #define SM_RH 26
 static int sm_rows(int ch) { return (ch - SM_LY - 30 - 56) / SM_RH; }
 static void sysmon_draw(int cx, int cy, int cw, int ch) {
-    const int dark = set_style && set_dark;
+    const int dark = 0;   /* (in dark mode, ccos darkens windows like this one itself) */
     uint32_t bg = dark ? RGB(0x20, 0x21, 0x24) : RGB(255, 255, 255), text = dark ? RGB(0xe8, 0xea, 0xee) : RGB(0x1e, 0x22, 0x28);
     uint32_t grey = dark ? RGB(0x9a, 0xa0, 0xaa) : RGB(0x70, 0x78, 0x84);
     fill_rect(cx, cy, cw, ch, bg, 255);

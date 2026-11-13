@@ -74,6 +74,7 @@ static void anim_stop(void) {
     int k = an.kind, i = an.win;
     an.kind = AN_NONE; free(an.px); an.px = NULL;
     if (an.bx1 > an.bx0) repaint(an.bx0, an.by0, an.bx1 - an.bx0, an.by1 - an.by0);
+    if (k == AN_CLOSE || k == AN_MIN) repaint(an.x - 4, an.y - 4, an.w + 8, an.h + 8);   /* (stopped before its first frame) */
     an.bx0 = an.bx1 = 0;
     if ((k == AN_RESTORE || k == AN_OPEN) && i >= 0 && wins[i].open) repaint_window(i);
 }
