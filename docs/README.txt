@@ -166,6 +166,7 @@ Apps (start menu):
                of Flathub apps: default, dark, or GTK themes you install
                from Flathub right there; restart the app to see it).
                Get more downloads extra themes from the ccos GitHub page.
+               Both download lists have a search box (or Ctrl+F).
   Terminal     a real Linux terminal (foot). Type commands like on the plain
                command line, but in a window: several at once, mouse selection,
                copy = Ctrl+Shift+C, paste = Ctrl+Shift+V, scroll with the wheel.

@@ -52,7 +52,11 @@ static struct {
     char gtk_avail[400][48]; int ngtk_avail; int gtk_listed;
     char gtk_inst[64][64]; int ngtk_inst;
     struct { char file[64], name[48], desc[120]; } online[60]; int nonline, online_listed;
+    char q[48]; int sfocus;                              /* the search box over the download lists */
 } tm = { .jfd = -1 };
+static int tm_gtk_ok(int i) { return !tm.q[0] || strcasestr(tm.gtk_avail[i], tm.q); }
+static int tm_on_ok(int i) { return !tm.q[0] || strcasestr(tm.online[i].name, tm.q) || strcasestr(tm.online[i].desc, tm.q) || strcasestr(tm.online[i].file, tm.q); }
+#define TM_SB_W 220
 
 static void themes_draw(int cx, int cy, int cw, int ch);
 static void tm_repaint(void) { if (win_of(themes_draw) >= 0) repaint_client(themes_draw); }
@@ -238,6 +242,20 @@ static void tm_colors(void) {
     tm_sub = dark ? RGB(0x9a, 0xa0, 0xaa) : RGB(0x70, 0x78, 0x84); tm_line = dark ? RGB(0x3a, 0x3c, 0x42) : RGB(0xe0, 0xe4, 0xea);
     tm_card = dark ? RGB(0x2a, 0x2b, 0x30) : RGB(0xf4, 0xf6, 0xf9); tm_acc = set_style ? TH()->accent : RGB(0x2a, 0x7c, 0xe0);
 }
+static void tm_search_box(int x, int y, int on_hover) {
+    int on = tm.sfocus;
+    fill_round(x, y, TM_SB_W, 28, 14, on || on_hover ? RGB(255, 255, 255) : tm_card, 255);
+    stroke_round(x, y, TM_SB_W, 28, 14, on ? tm_acc : tm_line, 255);
+    /* a little magnifying glass */
+    stroke_round(x + 10, y + 7, 11, 11, 6, tm_sub, 255);
+    fill_rect(x + 19, y + 17, 2, 5, tm_sub, 255); fill_rect(x + 20, y + 19, 3, 2, tm_sub, 255);
+    char q[48]; snprintf(q, sizeof q, "%s", tm.q);
+    while (q[0] && text_w(q) > TM_SB_W - 60) memmove(q, q + 1, strlen(q));
+    if (q[0]) draw_text(x + 30, y + 6, q, tm_fg, 255);
+    else if (!on) draw_text(x + 30, y + 6, "Search", tm_sub, 255);
+    if (on) fill_rect(x + 30 + text_w(q) + 1, y + 6, 1, 16, tm_fg, 255);
+    if (q[0]) draw_text(x + TM_SB_W - 20, y + 6, "x", tm_sub, 255);
+}
 static int tm_hv(void) { return hot.type == HOT_CONTENT && wins[hot.a].draw == themes_draw ? hot.b : -1; }
 static void tm_pill(int x, int y, int w, int h, const char *label, int on, int hv) {
     fill_round(x, y, w, h, 8, on ? tm_acc : hv ? mix(tm_card, tm_acc, 0.15f) : tm_card, 255);
@@ -399,8 +417,12 @@ static void themes_draw(int cx, int cy, int cw, int ch) {
         }
         clip_y0 = imax(clip_y0, cy + ly - Y + 18 + 22); clip_y1 = imin(clip_y1, cy + ch - (tm.msg[0] ? 44 : 4));
         int cols = 3, bw = (cw - TM_SIDE - 60) / cols;
+        {   int ox0 = clip_y0; clip_y0 = cy;                       /* the search box sits on the heading line */
+            tm_search_box(X + cols * bw - 8 - TM_SB_W, ly - 6, hv == 250); clip_y0 = ox0; }
+        int pos = 0;
         for (int i = 0; i < tm.ngtk_avail; i++) {
-            int x = X + (i % cols) * bw, yy = ly + 28 + (i / cols) * 34 - tm.scroll;
+            if (!tm_gtk_ok(i)) continue;
+            int x = X + (pos % cols) * bw, yy = ly + 28 + (pos / cols) * 34 - tm.scroll; pos++;
             if (yy + 30 < clip_y0 || yy > clip_y1) continue;
             int have = 0; for (int k = 0; k < tm.ngtk_inst; k++) if (!strcmp(tm.gtk_inst[k], tm.gtk_avail[i])) have = 1;
             fill_round(x, yy, bw - 8, 30, 6, hv == 300 + i ? mix(tm_card, tm_acc, 0.15f) : tm_card, 255);
@@ -409,13 +431,17 @@ static void themes_draw(int cx, int cy, int cw, int ch) {
             draw_text(x + 8, yy + 7, b, tm_fg, 255);
             draw_text(x + bw - 8 - 8 - text_w(have ? "Got" : "Get"), yy + 7, have ? "Got" : "Get", have ? tm_sub : tm_acc, 255);
         }
+        if (!pos && tm.q[0]) draw_text(X, ly + 34, "No app themes match your search.", tm_sub, 255);
         break; }
     case TT_MORE: {
         draw_text_bold(X, Y, "More ccos themes", tm_fg);
         draw_text(X, Y + 22, "Made for ccos, downloaded from ccos's GitHub", tm_sub, 255);
         if (!tm.online_listed) { tm_pill(X, Y + 54, 200, 34, tm.job == TJ_INDEX ? "Looking..." : "Show themes", 0, hv == 200); break; }
+        tm_search_box(X + cw - TM_SIDE - 48 - TM_SB_W, Y + 4, hv == 250);
+        int pos = 0;
         for (int i = 0; i < tm.nonline; i++) {
-            int y = Y + 54 + i * 58 - tm.scroll;
+            if (!tm_on_ok(i)) continue;
+            int y = Y + 54 + pos * 58 - tm.scroll; pos++;
             if (y + 50 < cy + 48 || y > cy + ch - 44) continue;
             int have = 0; char p[300]; snprintf(p, sizeof p, TM_DIR "/%s", tm.online[i].file); have = access(p, F_OK) == 0;
             fill_round(X, y, cw - TM_SIDE - 48, 50, 8, tm_card, 255);
@@ -423,6 +449,7 @@ static void themes_draw(int cx, int cy, int cw, int ch) {
             draw_text(X + 14, y + 27, tm.online[i].desc, tm_sub, 255);
             tm_pill(X + cw - TM_SIDE - 48 - 112, y + 9, 100, 32, have ? "Use" : "Get", 0, hv == 300 + i);
         }
+        if (!pos && tm.q[0]) draw_text(X, Y + 62, "No themes match your search.", tm_sub, 255);
         break; }
     }
     clip_x0 = ox0; clip_y0 = oy0; clip_x1 = ox1; clip_y1 = oy1;
@@ -461,13 +488,16 @@ static int themes_hit(int lx, int ly, int cw, int ch) {
         for (int i = 0; i < tm.ngtk_inst && i < 12; i++) { int k = i + 2; if (in_r(lx, ly, X + (k % 4) * 142, y + (k / 4) * 44, 130, 34)) return 3 + i; }
         int ly0 = y + ((tm.ngtk_inst + 2 + 3) / 4) * 44 + 16;
         if (!tm.gtk_listed) return in_r(lx, ly, X, ly0 + 26, 200, 34) ? 200 : -1;
-        if (ly < ly0 + 40 || ly > ch - 44) return -1;
         int cols = 3, bw = (cw - TM_SIDE - 60) / cols;
-        for (int i = 0; i < tm.ngtk_avail; i++) if (in_r(lx, ly, X + (i % cols) * bw, ly0 + 28 + (i / cols) * 34 - tm.scroll, bw - 8, 30)) return 300 + i;
+        if (in_r(lx, ly, X + cols * bw - 8 - TM_SB_W, ly0 - 6, TM_SB_W, 28)) return 250;
+        if (ly < ly0 + 40 || ly > ch - 44) return -1;
+        for (int i = 0, pos = 0; i < tm.ngtk_avail; i++) if (tm_gtk_ok(i)) { if (in_r(lx, ly, X + (pos % cols) * bw, ly0 + 28 + (pos / cols) * 34 - tm.scroll, bw - 8, 30)) return 300 + i; pos++; }
         return -1; }
     case TT_MORE:
         if (!tm.online_listed) return in_r(lx, ly, X, Y + 54, 200, 34) ? 200 : -1;
-        for (int i = 0; i < tm.nonline; i++) if (in_r(lx, ly, X + cw - TM_SIDE - 48 - 112, Y + 54 + i * 58 - tm.scroll + 9, 100, 32)) return 300 + i;
+        if (in_r(lx, ly, X + cw - TM_SIDE - 48 - TM_SB_W, Y + 4, TM_SB_W, 28)) return 250;
+        if (ly < Y + 48) return -1;
+        for (int i = 0, pos = 0; i < tm.nonline; i++) if (tm_on_ok(i)) { if (in_r(lx, ly, X + cw - TM_SIDE - 48 - 112, Y + 54 + pos * 58 - tm.scroll + 9, 100, 32)) return 300 + i; pos++; }
         return -1;
     }
     return -1;
@@ -487,8 +517,14 @@ static void themes_drag(int lx, int ly, int cw, int ch) {      /* moving the gla
 static void themes_release(void) { if (tm_gl_drag) { tm_gl_drag = 0; save_settings(); repaint_all(); } }
 static void themes_click(int lx, int ly, int cw, int ch) {
     int id = themes_hit(lx, ly, cw, ch);
+    if (id == 250) {                                     /* the search box: clear with its x, else type */
+        int X = TM_SIDE + 24, right = tm.tab == TT_APPS ? X + 3 * ((cw - TM_SIDE - 60) / 3) - 8 : X + cw - TM_SIDE - 48;
+        if (tm.q[0] && lx >= right - 26) { tm.q[0] = 0; tm.scroll = 0; }
+        tm.sfocus = 1; tm_repaint(); return;
+    }
+    if (tm.sfocus) { tm.sfocus = 0; tm_repaint(); }
     if (id < 0) return;
-    if (id >= 1000) { tm.tab = id - 1000; tm.scroll = 0; tm.msg[0] = 0; if (tm.tab == TT_THEMES) tm_load_list(); tm_repaint(); return; }
+    if (id >= 1000) { tm.tab = id - 1000; tm.scroll = 0; tm.msg[0] = 0; tm.q[0] = 0; tm.sfocus = 0; if (tm.tab == TT_THEMES) tm_load_list(); tm_repaint(); return; }
     switch (tm.tab) {
     case TT_THEMES: if (id < tm_n) tm_apply(&tm_list[id]); break;
     case TT_WINDOWS:
@@ -530,9 +566,29 @@ static void themes_click(int lx, int ly, int cw, int ch) {
     }
     tm_repaint();
 }
+static int tm_nvis_gtk(void) { int n = 0; for (int i = 0; i < tm.ngtk_avail; i++) n += tm_gtk_ok(i); return n; }
+static int tm_nvis_on(void) { int n = 0; for (int i = 0; i < tm.nonline; i++) n += tm_on_ok(i); return n; }
+static void themes_key(int code, int mods) {               /* typing in the search box */
+    if (!tm.sfocus) {
+        if ((mods & MOD_CTRL) && code == KEY_F && (tm.tab == TT_APPS ? tm.gtk_listed : tm.tab == TT_MORE ? tm.online_listed : 0)) { tm.sfocus = 1; tm_repaint(); }
+        return;
+    }
+    if (code == KEY_ESC) { if (tm.q[0]) tm.q[0] = 0; else tm.sfocus = 0; tm.scroll = 0; tm_repaint(); return; }
+    if (code == KEY_ENTER || code == KEY_KPENTER) { tm.sfocus = 0; tm_repaint(); return; }
+    if (code == KEY_BACKSPACE) {
+        int l = (int)strlen(tm.q);
+        if (l) { tm.q[u8_prev(tm.q, l)] = 0; tm.scroll = 0; tm_repaint(); update_hover(); }
+        return;
+    }
+    char t[8]; int k = key_text(code, mods & ~MOD_CTRL, t);
+    if (k <= 0 || (mods & MOD_CTRL) || t[0] == '\t' || t[0] == '\n') return;
+    size_t l = strlen(tm.q);
+    if (l + (size_t)k < sizeof tm.q) { memcpy(tm.q + l, t, (size_t)k); tm.q[l + (size_t)k] = 0; }
+    tm.scroll = 0; tm_repaint(); update_hover();
+}
 static void themes_wheel(int amount) {
     tm.scroll = imax(0, tm.scroll - amount * 50);
-    int lim = tm.tab == TT_THEMES ? ((tm_n + 2) / 3) * (TM_CH + 12) : tm.tab == TT_APPS ? ((tm.ngtk_avail + 2) / 3) * 34 : tm.tab == TT_MORE ? tm.nonline * 58 : 0;
+    int lim = tm.tab == TT_THEMES ? ((tm_n + 2) / 3) * (TM_CH + 12) : tm.tab == TT_APPS ? ((tm_nvis_gtk() + 2) / 3) * 34 : tm.tab == TT_MORE ? tm_nvis_on() * 58 : 0;
     tm.scroll = imin(tm.scroll, imax(0, lim - 300));
     tm_repaint(); update_hover();
 }
@@ -540,7 +596,7 @@ static int themes_on_close(void) { return 1; }
 static void themes_open(void) {
     tm_load_list(); tm_scan_gtk_installed();
     static const Win t = { .title = "Themes", .icon = ICON_THEMES, .draw = themes_draw, .click = themes_click, .drag = themes_drag, .release = themes_release, .hit = themes_hit,
-                           .elem_rect = themes_elem_rect, .wheel = themes_wheel, .fd = tm_fd, .wake = tm_wake, .on_close = themes_on_close };
+                           .elem_rect = themes_elem_rect, .wheel = themes_wheel, .key = themes_key, .fd = tm_fd, .wake = tm_wake, .on_close = themes_on_close };
     open_win(&t, imin(W - 40, TM_W), imin(H - TASKBAR_H - 40, TM_H));
 }
 /* the icon: a paint brush */
