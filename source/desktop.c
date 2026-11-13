@@ -188,7 +188,7 @@ static int set_ntp = 1;          /* set the clock from the internet */
 static char set_upd_repo[96] = "justforcountryballs/CcOS";
 static char set_upd_api[200];                 /* testing: another server instead of api.github.com */
 static int set_rec_sound = 1;     /* Record: with the sound apps make */
-static int set_bin_icon;         /* the Recycle Bin got its desktop icon (once; delete it and it stays away) */
+static int set_bin_icon;         /* the Recycle Bin got its desktop icon (once; delete it and it stays away). 2: put first, at the top */
 static int set_upd_auto = 1;                  /* look once a day */
 static long long set_upd_last;                /* when we last looked (time_t) */
 static int set_rtc_local = 1;    /* hardware clock in local time, like Windows */
@@ -326,6 +326,25 @@ static void desk_free_cell(int *c, int *r) {           /* first empty spot, colu
 }
 static void repaint_all(void);
 static void save_settings(void);
+/* the Recycle Bin goes first, top left: the icons under it in the first column move down one */
+static void desk_bin_to_top(void) {
+    int b = desk_find(BIN_CMD);
+    if (b < 0 || (desk_icons[b].col == 0 && desk_icons[b].row == 0)) return;
+    desk_icons[b].col = -1;                                   /* out of the way while the others move */
+    int rows = desk_rows(), at[64], end = 0;
+    for (; end < rows && end < 64; end++) {                   /* the icons from the top down, until a gap */
+        at[end] = -1;
+        for (int i = 0; i < ndesk; i++) if (desk_icons[i].col == 0 && desk_icons[i].row == end) at[end] = i;
+        if (at[end] < 0) break;
+    }
+    int spill = -1;
+    for (int r = end - 1; r >= 0; r--) {
+        if (r + 1 >= rows) { spill = at[r]; desk_icons[spill].col = -1; }   /* the bottom one doesn't fit */
+        else desk_icons[at[r]].row = r + 1;
+    }
+    desk_icons[b].col = 0; desk_icons[b].row = 0;
+    if (spill >= 0) desk_free_cell(&desk_icons[spill].col, &desk_icons[spill].row);
+}
 static int desk_add(const char *cmd, const char *label) {
     if (desk_find(cmd) >= 0 || ndesk >= MAXDESK) return 0;
     DeskIcon *d = &desk_icons[ndesk];
@@ -1165,7 +1184,7 @@ static void load_settings(void) {
         if (sscanf(line, "tzauto=%d", &v) == 1) set_tz_auto = !!v;
         if (sscanf(line, "ntp=%d", &v) == 1) set_ntp = !!v;
         if (sscanf(line, "upd_auto=%d", &v) == 1) set_upd_auto = !!v;
-        if (sscanf(line, "binicon=%d", &v) == 1) set_bin_icon = !!v;
+        if (sscanf(line, "binicon=%d", &v) == 1) set_bin_icon = v;
         if (sscanf(line, "recsound=%d", &v) == 1) set_rec_sound = !!v;
         if (!strncmp(line, "upd_last=", 9)) set_upd_last = atoll(line + 9);
         if (!strncmp(line, "upd_repo=", 9)) { snprintf(set_upd_repo, sizeof set_upd_repo, "%s", line + 9); set_upd_repo[strcspn(set_upd_repo, "\r\n")] = 0; }
@@ -7488,7 +7507,11 @@ int main(void) {
     check_persistent();
     fp_scan();                                    /* Flatpak apps (pins may point at them) */
     load_settings();
-    if (!set_bin_icon) { desk_add(BIN_CMD, "Recycle Bin"); set_bin_icon = 1; }
+    if (set_bin_icon < 2) {                       /* first: the Recycle Bin (added once; moved up for 1.3 test builds) */
+        if (!set_bin_icon) desk_add(BIN_CMD, "Recycle Bin");
+        desk_bin_to_top(); set_bin_icon = 2;
+        if (settings_loaded) save_settings();
+    }
     desk_bin_changed();
     tz_init();
     power_init();
