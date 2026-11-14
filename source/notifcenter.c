@@ -8,9 +8,25 @@
 #define NC_IH 68                       /* one notification */
 static struct { int icon; char title[64], body[160]; time_t t; } nc_list[NC_MAX];
 static int nc_n, nc_unread, nc_open, nc_scroll;
+/* Focus (do not disturb): notifications still land here, but no cards pop up and no sound */
+#define NC_FH 50                       /* the Focus row */
+static time_t focus_until; static int focus_forever, focus_missed;
+static int focus_on(void) { return focus_forever || (focus_until && time(NULL) < focus_until); }
 
 static int bell_x(void) { return TB_RIGHT; }
-static int nc_h(void) { return imin(H - TASKBAR_H - 24, 56 + imax(1, nc_n) * NC_IH + 8); }
+static void draw_crescent(float cx, float cy, float r, uint32_t c) {   /* a moon: a disc minus a smaller one */
+    float r2 = r * 0.86f, ox = r * 0.6f, oy = -r * 0.45f;
+    for (int y = (int)(cy - r) - 1; y <= (int)(cy + r) + 1; y++)
+        for (int x = (int)(cx - r) - 1; x <= (int)(cx + r) + 1; x++) {
+            int cov = 0;
+            for (int sy = 0; sy < 3; sy++) for (int sx = 0; sx < 3; sx++) {
+                float px = x + (sx + 0.5f) / 3 - cx, py = y + (sy + 0.5f) / 3 - cy;
+                if (px * px + py * py <= r * r && (px - ox) * (px - ox) + (py - oy) * (py - oy) > r2 * r2) cov++;
+            }
+            if (cov) fill_rect(x, y, 1, 1, c, cov * 255 / 9);
+        }
+}
+static int nc_h(void) { return imin(H - TASKBAR_H - 24, 56 + NC_FH + imax(1, nc_n) * NC_IH + 8); }
 static int nc_x(void) { return W - NC_W - 12; }
 static int nc_y(void) { return H - TASKBAR_H - 10 - nc_h(); }
 static void nc_repaint(void) { repaint(nc_x() - 4, 0, NC_W + 16, H - TASKBAR_H); }
@@ -24,6 +40,7 @@ static void nc_add(int icon, const char *title, const char *body) {
     snprintf(nc_list[0].body, sizeof nc_list[0].body, "%s", body ? body : "");
     nc_n++;
     if (!nc_open) nc_unread++;
+    if (focus_on()) focus_missed++;
     repaint_bell();
     if (nc_open) nc_repaint();
 }
@@ -48,10 +65,15 @@ static void draw_bell(void) {
     }
     uint32_t c = set_style ? TH()->text : RGB(0xf0, 0xf4, 0xf8);
     float cx = x + w / 2.0f, cy = y + h / 2.0f;
+    if (focus_on()) {                                         /* Focus: a moon instead of the bell */
+        draw_crescent(cx, cy, 7.5f, c);
+        goto badge;
+    }
     fill_circle(cx, cy - 4, 5.5f, c, 255);                     /* the dome */
     fill_rect((int)cx - 6, (int)cy - 4, 12, 7, c, 255);
     fill_round((int)cx - 8, (int)cy + 2, 16, 3, 1, c, 255);    /* the rim */
     fill_circle(cx, cy + 6.5f, 2, c, 255);                     /* the clapper */
+badge:
     if (nc_unread) {
         char b[8]; snprintf(b, sizeof b, "%d", imin(nc_unread, 99));
         int bw = imax(16, text_w(b) + 8);
@@ -66,7 +88,7 @@ static void nc_when(time_t t, char *b, size_t n) {
     else if (d < 3600) snprintf(b, n, "%ld min ago", d / 60);
     else { struct tm tm; localtime_r(&t, &tm); strftime(b, n, set_clock24 ? "%H:%M" : "%I:%M %p", &tm); }
 }
-static int nc_rows(void) { return (nc_h() - 56 - 8) / NC_IH; }
+static int nc_rows(void) { return (nc_h() - 56 - NC_FH - 8) / NC_IH; }
 static void draw_nc(void) {
     if (!nc_open) return;
     int x = nc_x(), y = nc_y(), w = NC_W, h = nc_h();
@@ -76,15 +98,33 @@ static void draw_nc(void) {
     if (set_style) { fill_round(x, y, w, h, 10, TH()->menu, 255); stroke_round(x, y, w, h, 10, TH()->menu_line, 255); }
     else { fill_round_grad(x, y, w, h, 10, RGB(0x2c, 0x3c, 0x52), RGB(0x14, 0x1e, 0x2c), 245); stroke_round(x, y, w, h, 10, RGB(0x6a, 0x84, 0xa8), 200); }
     draw_text_bold(x + 18, y + 18, "Notifications", fg);
+    {   /* Focus: Off / 30 min / 1 hour / Until I turn it off */
+        int fy = y + 46;
+        draw_text(x + 18, fy + 8, "Focus", fg, 255);
+        static const char *fl[4] = { "Off", "30 min", "1 hour", "Until off" };
+        int on = focus_forever ? 3 : focus_on() ? (focus_until - time(NULL) > 1800 ? 2 : 1) : 0, bx = x + 74;
+        for (int k = 0; k < 4; k++) {
+            int bw = text_w(fl[k]) + 18, sel = k == on, hv = hot.type == HOT_NC && hot.a == 3000 + k;
+            fill_round(bx, fy + 2, bw, 28, 14, sel ? (set_style ? TH()->accent : RGB(0x1e, 0x78, 0xe0)) : hv ? (set_style ? TH()->hover : RGB(255, 255, 255)) : (set_style ? TH()->hover : RGB(255, 255, 255)), sel || set_style ? 255 : (hv ? 50 : 22));
+            draw_text(bx + 9, fy + 8, fl[k], sel ? RGB(255, 255, 255) : fg, 255);
+            bx += bw + 6;
+        }
+        if (focus_on() && !focus_forever) {
+            char b[40]; struct tm tm; localtime_r(&focus_until, &tm);
+            strftime(b, sizeof b, set_clock24 ? "on until %H:%M" : "on until %I:%M %p", &tm);
+            draw_text(x + w - 18 - text_w(b), fy + 8, b, sub, 255);
+        }
+    }
     if (nc_n) {
         int hv = hot.type == HOT_NC && hot.a == 1000;
         const char *cl = "Clear all"; int cw = text_w(cl);
         if (hv) fill_round(x + w - cw - 30, y + 12, cw + 16, 28, 5, set_style ? TH()->hover : RGB(255, 255, 255), set_style ? 255 : 40);
         draw_text(x + w - cw - 22, y + 18, cl, set_style ? TH()->accent : RGB(0x9c, 0xd0, 0xff), 255);
     } else {
-        draw_text(x + (w - text_w("No new notifications")) / 2, y + 56 + 18, "No new notifications", sub, 255);
+        draw_text(x + (w - text_w("No new notifications")) / 2, y + NC_FH + 56 + 18, "No new notifications", sub, 255);
         return;
     }
+    y += NC_FH;
     int rows = nc_rows();
     for (int r = 0; r < rows && nc_scroll + r < nc_n; r++) {
         int i = nc_scroll + r, iy = y + 52 + r * NC_IH;
@@ -119,6 +159,13 @@ static int nc_hit(void) {
     int x = nc_x(), y = nc_y(), w = NC_W;
     if (!in_rect(x, y, w, nc_h())) return -1;
     if (nc_n && my >= y + 10 && my < y + 42 && mx >= x + w - 140) return 1000;
+    if (my >= y + 48 && my < y + 78) {                     /* the Focus pills */
+        static const char *fl[4] = { "Off", "30 min", "1 hour", "Until off" };
+        int bx = x + 74;
+        for (int k = 0; k < 4; k++) { int bw = text_w(fl[k]) + 18; if (mx >= bx && mx < bx + bw) return 3000 + k; bx += bw + 6; }
+        return -2;
+    }
+    y += NC_FH;
     int r = (my - y - 52) / NC_IH, i = nc_scroll + r;
     if (my >= y + 52 && r < nc_rows() && i < nc_n) {
         if (mx >= x + w - 40 && my < y + 52 + r * NC_IH + 28) return 2000 + i;
@@ -126,7 +173,26 @@ static int nc_hit(void) {
     }
     return -2;
 }
+static void focus_set(int k) {          /* 0 off, 1 30 min, 2 1 hour, 3 until turned off */
+    int was = focus_on();
+    focus_forever = k == 3; focus_until = k == 1 ? time(NULL) + 1800 : k == 2 ? time(NULL) + 3600 : 0;
+    if (focus_on() && !was) focus_missed = 0;
+    if (!focus_on() && was && focus_missed) {
+        char b[80]; snprintf(b, sizeof b, "%d notification%s came in while you were focusing.", focus_missed, focus_missed == 1 ? "" : "s");
+        focus_missed = 0; toast(ICON_MOON, "Focus is off", b);
+    }
+    repaint_bell(); if (nc_open) nc_repaint();
+}
+static void focus_tick(void) {          /* once a second: is the time up? */
+    if (focus_until && !focus_forever && time(NULL) >= focus_until) {
+        focus_until = 0;
+        char b[80]; snprintf(b, sizeof b, focus_missed ? "%d notification%s came in. They're in the notification centre." : "Notifications will pop up again.", focus_missed, focus_missed == 1 ? "" : "s");
+        focus_missed = 0; toast(ICON_MOON, "Focus finished", b);
+        repaint_bell(); if (nc_open) nc_repaint();
+    }
+}
 static void nc_click(int id) {
+    if (id >= 3000 && id < 3004) { focus_set(id - 3000); return; }
     if (id == 1000) { nc_n = 0; nc_scroll = 0; nc_repaint(); return; }
     if (id >= 2000 && id - 2000 < nc_n) {
         int i = id - 2000;

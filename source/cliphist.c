@@ -135,7 +135,7 @@ static void draw_ch(void) {
         if (c->png && c->th) {
             int tx = x + 22, ty = iy + (CH_IH - 6 - c->thh) / 2;
             for (int yy = imax(ty, clip_y0); yy < imin(ty + c->thh, clip_y1); yy++)
-                for (int xx = imax(tx, clip_x0); xx < imin(tx + c->tw, clip_x1); xx++) back[yy * W + xx] = c->th[(yy - ty) * c->tw + (xx - tx)];
+                for (int xx = imax(tx, clip_x0); xx < imin(tx + c->tw, clip_x1); xx++) back[yy * BW + xx] = c->th[(yy - ty) * c->tw + (xx - tx)];
             draw_text(x + 30 + c->tw, iy + 19, "Picture", sub, 255);
         } else {                                                 /* two lines of the text */
             char ln[2][64]; int L = 0; const char *s = c->data; int maxw = w - 52;

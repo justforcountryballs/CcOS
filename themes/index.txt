@@ -1,0 +1,9 @@
+# ccos themes: file<TAB>name<TAB>what it looks like
+ocean.cctheme	Ocean	Teal and calm, light
+forest.cctheme	Forest	Dark greens, like a pine forest
+midnight.cctheme	Midnight	Deep night blue with indigo
+coffee.cctheme	Coffee	Warm dark browns and caramel
+cherry.cctheme	Cherry Blossom	Soft pink, light
+retro.cctheme	Retro Terminal	Black and green, like an old computer screen
+lavender.cctheme	Lavender	Light lilac and purple
+classic-dark.cctheme	Graphite	Plain dark grey, nothing loud

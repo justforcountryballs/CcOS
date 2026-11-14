@@ -170,9 +170,10 @@ static void bat_warn(void) {
 static long long idle_last;       /* when the keyboard, mouse or touchpad was last used (ms) */
 static int idle_state;            /* 0 normal, 1 dimmed, 2 screen off */
 static int fb_fd = -1;
+static int kms_on; static void kms_blank(int on); static void repaint_all(void);
 static void screen_power(int on) {
-    if (on) { bl_write(set_bright > 0 ? set_bright : 100); if (fb_fd >= 0) ioctl(fb_fd, FBIOBLANK, FB_BLANK_UNBLANK); }
-    else { bl_write(0); if (fb_fd >= 0) ioctl(fb_fd, FBIOBLANK, FB_BLANK_POWERDOWN); }
+    if (on) { bl_write(set_bright > 0 ? set_bright : 100); if (kms_on) { kms_blank(1); repaint_all(); } else if (fb_fd >= 0) ioctl(fb_fd, FBIOBLANK, FB_BLANK_UNBLANK); }
+    else { bl_write(0); if (kms_on) kms_blank(0); else if (fb_fd >= 0) ioctl(fb_fd, FBIOBLANK, FB_BLANK_POWERDOWN); }
 }
 static void power_wake_screen(void) {
     if (idle_state == 0) return;

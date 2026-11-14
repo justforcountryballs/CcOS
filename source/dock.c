@@ -7,7 +7,7 @@
  *  The clock, network, battery and a power button sit in a small pill
  *  in the bottom right corner.
  * =================================================================== */
-#define DOCK_B     48                 /* icon size, normal */
+#define DOCK_B     dock_b()           /* icon size (Themes > Taskbar) */
 #define DOCK_GAP   10
 #define DOCK_PAD   9
 #define DOCK_MAG   0.72f              /* the icon under the mouse grows by this much */
@@ -22,6 +22,7 @@ static float dock_mx = -1;              /* where the mouse is along the dock */
 static long long dock_anim_t;
 
 static void finder_open(void);
+static int hp_shown_(void);
 /* the slots, laid out with the current growing; returns how many. Also the shelf. */
 static int dock_layout(DockSlot *s, int *shelf_x, int *shelf_w) {
     TbItem it[MAXPINS + MAXWIN];
@@ -149,7 +150,7 @@ static void draw_dock(void) {
             fill_circle(x + sz / 2.0f, H - DOCK_BOT - 3.5f, running == 2 ? 2.6f : 2.0f, dark ? RGB(0xe8, 0xea, 0xee) : RGB(0x20, 0x24, 0x2c), 230);
     }
     /* the name of the one under the mouse, above it */
-    if (hov >= 0 && hov < n && dock_mag > 0.3f && !menu_open && !pop.open) {
+    if (hov >= 0 && hov < n && dock_mag > 0.3f && !menu_open && !pop.open && !hp_shown_()) {
         char b[80]; const char *nm = dock_name(&s[hov], b, sizeof b);
         char t[44]; snprintf(t, sizeof t, "%s", nm); if (text_len(t) > 36) { u8_trunc(t, 34); strcat(t, ".."); }
         int tw = text_w(t), sz = (int)s[hov].size, top = H - DOCK_BOT - DOCK_PAD - sz;

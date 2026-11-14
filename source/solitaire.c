@@ -160,7 +160,7 @@ static void solitaire_draw(int cx, int cy, int cw, int ch) {
     /* green felt */
     for (int y = imax(cy + MENUBAR_H, clip_y0); y < imin(cy + ch - SO_STATUS, clip_y1); y++) {
         uint32_t c = mix(RGB(0x1e, 0x86, 0x3c), RGB(0x0e, 0x5a, 0x26), (float)(y - cy) / ch);
-        for (int x = imax(cx, clip_x0); x < imin(cx + cw, clip_x1); x++) back[(size_t)y * W + x] = c;
+        for (int x = imax(cx, clip_x0); x < imin(cx + cw, clip_x1); x++) back[(size_t)y * BW + x] = c;
     }
     /* deck, turned cards, the four piles */
     if (so_nstock) so_draw_card(cx + so_pile_x(0), cy + SO_Y0, -1);

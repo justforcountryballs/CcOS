@@ -87,7 +87,7 @@ static void cam_draw(int cx, int cy, int cw, int ch) {
         int x0 = imax(dx, clip_x0), x1 = imin(dx + dw, clip_x1), y0 = imax(dy, clip_y0), y1 = imin(dy + dh, clip_y1);
         for (int y = y0; y < y1; y++) {
             const uint32_t *row = src + (size_t)((y - dy) * cam.h / dh) * cam.w;
-            uint32_t *d = &back[(size_t)y * W];
+            uint32_t *d = &back[(size_t)y * BW];
             for (int x = x0; x < x1; x++) d[x] = row[cam.w - 1 - (x - dx) * cam.w / dw] & 0xffffff;   /* mirrored, like a mirror */
         }
         if (ui_ms() < cam.flash) fill_rect(dx, dy, dw, dh, RGB(255, 255, 255), 160);

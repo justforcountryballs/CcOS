@@ -15,6 +15,8 @@ if mountpoint -q /apps; then
     rm -rf /var/lib/flatpak /var/tmp
     ln -s /apps/flatpak /var/lib/flatpak
     ln -s /apps/tmp /var/tmp                             # big downloads go here, not into memory
+    C=/apps/flatpak/repo/config                          # slow stick: wait longer for Flatpak's repo lock
+    [ -f $C ] && ! grep -q '^lock-timeout-secs' $C && sed -i '/^\[core\]/a lock-timeout-secs=600' $C
 else
     mkdir -p /var/lib/flatpak /var/tmp                  # no apps disk: apps live in memory until restart
     chmod 1777 /var/tmp

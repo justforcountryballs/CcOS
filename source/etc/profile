@@ -1,0 +1,15 @@
+# ccos: settings for every Terminal (and other login shells)
+export HOME=/root
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export EDITOR=nano VISUAL=nano PAGER=less LESS=-R
+# Python: things installed with pip stay on the stick (D:\.python), not just in memory
+if mountpoint -q /data 2>/dev/null; then
+    export PYTHONUSERBASE=/data/.python
+    mkdir -p /data/.ssh 2>/dev/null && chmod 700 /data/.ssh && [ ! -e /root/.ssh ] && ln -s /data/.ssh /root/.ssh   # ssh keys too
+else
+    export PYTHONUSERBASE=/root/.local
+fi
+export PATH="$PATH:$PYTHONUSERBASE/bin"
+cd /root
+[ -n "$BASH_VERSION" ] && [ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
+[ -z "$BASH_VERSION" ] && export PS1='\u@\h:\w# '

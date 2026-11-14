@@ -45,7 +45,7 @@ static int *sm_list; static int sm_nlist;              /* apps shown on the list
 
 /* ---- background jobs: refresh the catalog, install, remove, update ---- */
 enum { SJ_NONE, SJ_REFRESH, SJ_INSTALL, SJ_REMOVE, SJ_UPDATE };
-static struct { int kind; char id[96]; int fd; pid_t pid; int pct, step, steps; char out[4096]; int outn; long long t0; } sm_job;
+static struct { int kind; char id[96]; int fd; pid_t pid; int pct, step, steps, waiting; char out[4096]; int outn; long long t0; } sm_job;
 static char sm_msg[160]; static int sm_msg_bad;        /* the line at the bottom: "Firefox is installed" */
 static int sm_loading;                                  /* catalog being fetched */
 
@@ -188,10 +188,10 @@ static void sm_job_start(int kind, const char *id) {
     if (sm_job.kind) return;
     char cmd[400];
     if (kind == SJ_REFRESH)
-        snprintf(cmd, sizeof cmd, "flatpak update --appstream flathub && ccos-store-index " ST_AS "/appstream.xml.gz " ST_INDEX);
-    else if (kind == SJ_INSTALL) snprintf(cmd, sizeof cmd, "flatpak install -y flathub %s", id);
-    else if (kind == SJ_REMOVE) snprintf(cmd, sizeof cmd, "flatpak uninstall -y %s && flatpak uninstall -y --unused", id);
-    else snprintf(cmd, sizeof cmd, "flatpak update -y");
+        snprintf(cmd, sizeof cmd, "ccos-fp flatpak update --appstream flathub && ccos-store-index " ST_AS "/appstream.xml.gz " ST_INDEX);
+    else if (kind == SJ_INSTALL) snprintf(cmd, sizeof cmd, "ccos-fp flatpak install -y flathub %s", id);
+    else if (kind == SJ_REMOVE) snprintf(cmd, sizeof cmd, "ccos-fp flatpak uninstall -y %s && flatpak uninstall -y --unused", id);
+    else snprintf(cmd, sizeof cmd, "ccos-fp flatpak update -y");
     char full[512]; snprintf(full, sizeof full, "%s; echo; echo \"@@EXIT $?\"", cmd);
     int mfd;
     struct winsize ws = { .ws_row = 40, .ws_col = 110 };
@@ -229,7 +229,11 @@ static void sm_job_done(int code) {
     if (kind == SJ_REFRESH) {
         sm_loading = 0;
         if (code == 0) { sm_load(); sm_refresh_lists(); }
-        else snprintf(sm_msg, sizeof sm_msg, "Couldn't get the app list from Flathub. Check the internet connection and click Retry.");
+        else {
+            if (!sm_n) sm_load();                        /* an older list is better than none */
+            if (sm_n) sm_refresh_lists();
+            snprintf(sm_msg, sizeof sm_msg, "Couldn't get the app list from Flathub. %s", last[0] ? last : "Check the internet connection and click Retry.");
+        }
     } else if (kind == SJ_INSTALL) {
         if (code == 0) snprintf(sm_msg, sizeof sm_msg, "%s is installed. Find it in the start menu or on the desktop.", sm_name_of(id));
         else snprintf(sm_msg, sizeof sm_msg, "Couldn't install %s. %s", sm_name_of(id), last);
@@ -277,6 +281,12 @@ static void sm_wake(void) {
                 (!strncmp(q - 11, "Installing ", 11) || !strncmp(q - 9, "Updating ", 9) || !strncmp(q - 13, "Uninstalling ", 13))) {
                 sm_job.step = a; sm_job.steps = b2;
             }
+        }
+        {   /* ccos-fp: waiting for another Flatpak download (Terminal) to finish */
+            const char *w = NULL, *r = NULL;
+            for (const char *p = s; (p = strstr(p, "@@WAIT")); p++) w = p;
+            for (const char *p = s; (p = strstr(p, "@@RETRY")); p++) r = p;
+            sm_job.waiting = w && (!r || r < w);
         }
         const char *ex = strstr(s, "@@EXIT ");
         if (ex) { sm_job_done(atoi(ex + 7)); return; }
@@ -456,8 +466,8 @@ static void store_draw(int cx, int cy, int cw, int ch) {
     int y_start = y;
     if (!sm_n && sm_page != SP_INSTALLED) {
         if (sm_loading) {
-            draw_text_bold(cx + pad, y + 10, "Getting the list of apps from Flathub...", text);
-            draw_text(cx + pad, y + 32, "The first time this takes a minute or two.", grey, 255);
+            draw_text_bold(cx + pad, y + 10, sm_job.waiting ? "Waiting for the other Flatpak download to finish..." : "Getting the list of apps from Flathub...", text);
+            draw_text(cx + pad, y + 32, sm_job.waiting ? "Something is being installed in Terminal; the list comes right after." : "The first time this takes a minute or two.", grey, 255);
             sm_progress(cx + pad, y + 60, imin(iw, 420), sm_job.pct);
         } else {
             draw_text_bold(cx + pad, y + 10, "No app list yet.", text);

@@ -427,6 +427,16 @@ int main(int argc, char **argv) {
     if (argc == 3 && !strcmp(argv[1], "check")) return cmd_check(argv[2]);
     if (argc == 3 && !strcmp(argv[1], "install")) return cmd_install(argv[2]);
     if (argc == 2 && !strcmp(argv[1], "confirm")) return cmd_confirm();
+    if (argc == 4 && !strcmp(argv[1], "fetch")) {            /* a small file (themes...): URL OUT */
+        CURL *c = web(argv[2]); struct mem m = { NULL, 0 };
+        curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, to_mem); curl_easy_setopt(c, CURLOPT_WRITEDATA, &m);
+        CURLcode r = curl_easy_perform(c);
+        if (r != CURLE_OK) { printf("ERR %s\n", web_err(r, c)); return 1; }
+        char tmp[512]; snprintf(tmp, sizeof tmp, "%s.part", argv[3]);
+        FILE *f = fopen(tmp, "wb");
+        if (!f || fwrite(m.p ? m.p : "", 1, m.n, f) != m.n || fclose(f) || rename(tmp, argv[3])) { printf("ERR Couldn't save it\n"); return 1; }
+        printf("OK %zu\n", m.n); return 0;
+    }
     if (argc == 2 && !strcmp(argv[1], "status")) {
         char v[32]; my_version(v, sizeof v);
         say("VERSION %s", v);

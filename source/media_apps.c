@@ -137,7 +137,7 @@ static void blit_scaled(const uint32_t *src, int sw, int sh, int dx, int dy, int
     for (int x = x0; x < x1 && x - x0 < 8192; x++) xm[x - x0] = (int)((long)(x - dx) * sw / dw);
     for (int y = y0; y < y1; y++) {
         const uint32_t *s = src + (size_t)((long)(y - dy) * sh / dh) * sw;
-        uint32_t *d = &back[(size_t)y * W];
+        uint32_t *d = &back[(size_t)y * BW];
         if (dw == sw) memcpy(d + x0, s + (x0 - dx), (size_t)(x1 - x0) * 4);
         else for (int x = x0; x < x1; x++) d[x] = s[xm[x - x0]] & 0xffffff;
     }
@@ -352,7 +352,7 @@ static void photos_draw(int cx, int cy, int cw, int ch) {
             if (clip_range(&x0, &y0, &x1, &y1))
                 for (int yy = y0; yy < y1; yy++) {
                     const uint32_t *s = ph.cache + (size_t)(yy - y) * zw - x;
-                    uint32_t *d = &back[(size_t)yy * W];
+                    uint32_t *d = &back[(size_t)yy * BW];
                     for (int xx = x0; xx < x1; xx++) {
                         uint32_t c = s[xx], a = c >> 24;
                         if (a == 255) d[xx] = c & 0xffffff;

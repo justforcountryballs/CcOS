@@ -38,4 +38,14 @@ PREFS
         done
     fi
 fi
-exec flatpak run "$app" "$@"
+# the look of apps (Settings > Themes > Apps): a GTK theme, or dark
+# (the options have no spaces in them, so they can sit in one variable)
+gtk=$(sed -n 's/^gtktheme=//p' /data/ccos.conf 2>/dev/null | head -1 | tr -cd 'A-Za-z0-9._-')
+LOOK=""
+case "$gtk" in
+    "") ;;
+    dark) LOOK="--env=GTK_THEME=Adwaita:dark --env=ADW_DEBUG_COLOR_SCHEME=prefer-dark" ;;
+    *)  LOOK="--filesystem=$HOME/.themes:ro --env=GTK_THEME=$gtk"
+        case "$gtk" in *[Dd]ark*|*[Nn]oir*|*[Nn]ight*) LOOK="$LOOK --env=ADW_DEBUG_COLOR_SCHEME=prefer-dark" ;; esac ;;
+esac
+exec flatpak run $LOOK "$app" "$@"

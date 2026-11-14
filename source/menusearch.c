@@ -18,6 +18,7 @@ static const struct { const char *name, *words; int tab; } ms_pages[] = {
     { "Power", "battery brightness sleep lid screen off power saving", TAB_POWER },
     { "Bluetooth", "bluetooth headphones speaker pair devices", TAB_BT },
     { "Update", "update upgrade new version github", TAB_UPDATE },
+    { "Themes", "theme themes look colour color accent folder icons pointer cursor dock gtk", -1 },
     { "About", "about version system graphics gpu chip storage save disk", TAB_ABOUT },
 };
 
@@ -83,6 +84,7 @@ static void ms_scan_files(void) {
 }
 static void ms_update(void);
 static void finder_files_changed(void);
+static void ex_search_files_changed(void);
 /* in the main loop: the helper thread finished - use its list */
 static void ms_tick(void) {
     if (!ms_scanning || !__atomic_load_n(&ms_scan_ready, __ATOMIC_ACQUIRE)) return;
@@ -91,6 +93,7 @@ static void ms_tick(void) {
     ms_files = ms_new.v; ms_mtime = ms_new.t; ms_nfiles = ms_new.n; ms_new.v = NULL; ms_new.t = NULL; ms_new.n = 0;
     ms_scanning = 0; ms_scan_ready = 0;
     finder_files_changed();
+    ex_search_files_changed();
     if (menu_open && ms_q[0]) { int sel = ms_sel; ms_update(); ms_sel = imin(sel, imax(0, ms_n - 1)); repaint_menu(); }
 }
 
@@ -106,7 +109,8 @@ static void ms_update(void) {
     for (int i = 0; i < (int)(sizeof ms_pages / sizeof ms_pages[0]); i++)
         if (ms_match(ms_pages[i].name, ms_q) || ms_match(ms_pages[i].words, ms_q)) {
             char l[64]; snprintf(l, sizeof l, "Settings: %s", ms_pages[i].name);
-            ms_add(MSR_SET, ICON_GEAR, ms_pages[i].tab, l, "@settings");
+            if (ms_pages[i].tab < 0) ms_add(MSR_APP, ICON_THEMES, 0, "Themes", "@themes");
+            else ms_add(MSR_SET, ICON_GEAR, ms_pages[i].tab, l, "@settings");
         }
     for (int pass = 2; pass >= 1; pass--)
         for (int i = 0; i < ms_nfiles && ms_n < MS_MAXRES; i++) {

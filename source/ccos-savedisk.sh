@@ -1,4 +1,17 @@
 #!/bin/sh
+# a USB stick is slow: let reading (opening apps, folders) go before the
+# pile of writing, and don't let a big copy fill all of memory with data
+# still waiting to be written (when that's flushed, everything waits)
+stick_tune() {
+    d=$(basename "$1"); d=${d%%[0-9]*}
+    q=/sys/block/$d/queue
+    [ -w $q/scheduler ] && echo mq-deadline > $q/scheduler 2>/dev/null
+    [ -w $q/iosched/read_expire ] && echo 150 > $q/iosched/read_expire 2>/dev/null
+    [ -w $q/iosched/write_expire ] && echo 8000 > $q/iosched/write_expire 2>/dev/null
+    [ -w $q/iosched/writes_starved ] && echo 4 > $q/iosched/writes_starved 2>/dev/null
+    echo $((16 * 1024 * 1024)) > /proc/sys/vm/dirty_background_bytes 2>/dev/null
+    echo $((96 * 1024 * 1024)) > /proc/sys/vm/dirty_bytes 2>/dev/null
+}
 # ccos-savedisk [--watch] - find ccos's save disk and mount it at /data
 #   in QEMU:            the virtual disk /dev/vda (ccos-data.img next to run.bat)
 #   from the USB stick: the stick's second partition "ccos-store" (made from
@@ -17,8 +30,9 @@ mkdir -p /data /mnt/usb
 
 if [ -b /dev/vda ]; then
     blkid /dev/vda | grep -q 'TYPE=' || mke2fs -q -L ccos-data /dev/vda >/dev/null 2>&1
-    mount /dev/vda /data 2>/dev/null
-    exit $?
+    mount /dev/vda /data 2>/dev/null || exit 1
+    stick_tune /dev/vda
+    exit 0
 fi
 grep -q 'ccos.live' /proc/cmdline || exit 1
 
@@ -40,7 +54,10 @@ use_store() {
         store=$new
     fi
     mkdir -p /mnt/store /apps
-    mount -t ext4 -o noatime "$store" /mnt/store 2>/dev/null || return 1
+    # commit=30: the journal is written less often; together with the settings
+    # below, the stick gets fewer, bigger writes and ccos waits less on it
+    mount -t ext4 -o noatime,commit=30 "$store" /mnt/store 2>/dev/null || return 1
+    stick_tune "$store"
     mkdir -p /mnt/store/data /mnt/store/apps
     if [ -f /mnt/usb/ccos/ccos-data.img ] && [ ! -f /mnt/store/data/ccos.conf ]; then
         # settings from the older save file: bring them along once
