@@ -205,7 +205,7 @@ static void ptr_set_focus(wsurf *s, int lx, int ly) {
 static void wl_update_focus(void) {
     if (!wl_dpy) return;
     int a = active_win();
-    int s = (a >= 0 && !wins[a].minimized && !menu_open) ? slot_of_win(a) : -1;
+    int s = (a >= 0 && !WHIDDEN(&wins[a]) && !menu_open) ? slot_of_win(a) : -1;
     wsurf *f = s >= 0 ? tops[s].s : NULL;
     for (int i = npop - 1; i >= 0 && f; i--)              /* an open menu takes the keys */
         if (pops[popstack[i]].grab && pops[popstack[i]].mapped && pops[popstack[i]].s) { f = pops[popstack[i]].s; break; }
@@ -295,7 +295,7 @@ static void surf_commit_buffer(wsurf *s) {
 
 static void surf_repaint(wsurf *s) {
     int x, y, win = surf_screen_pos(s, &x, &y);
-    if (win < 0 || wins[win].minimized) return;
+    if (win < 0 || WHIDDEN(&wins[win])) return;
     int cx, cy, cw, ch; client_rect(&wins[win], &cx, &cy, &cw, &ch);
     int sx0 = 0, sy0 = 0, sx1 = s->w, sy1 = s->h;
     if (s->rset) { sx0 = s->rx0; sy0 = s->ry0; sx1 = s->rx1; sy1 = s->ry1; s->rset = 0; if (sx1 <= sx0) return; }   /* only what changed */
@@ -597,6 +597,17 @@ static void out_bind(struct wl_client *c, void *d, uint32_t v, uint32_t id) {
     if (v >= WL_OUTPUT_DONE_SINCE_VERSION) wl_output_send_done(r);
 }
 
+/* the screen changed size (a second screen, Windows + P): tell the apps */
+static void wl_outputs_changed(void) {
+    if (!wl_dpy) return;
+    struct wl_resource *r;
+    wl_resource_for_each(r, &wl_outputs) {
+        wl_output_send_geometry(r, 0, 0, W * 254 / 960, H * 254 / 960, WL_OUTPUT_SUBPIXEL_UNKNOWN, "ccos", "screen", WL_OUTPUT_TRANSFORM_NORMAL);
+        wl_output_send_mode(r, WL_OUTPUT_MODE_CURRENT | WL_OUTPUT_MODE_PREFERRED, W, H, 60000);
+        if (wl_resource_get_version(r) >= WL_OUTPUT_DONE_SINCE_VERSION) wl_output_send_done(r);
+    }
+}
+
 /* ======================================================================
  *  XDG SHELL: APP WINDOWS
  * ====================================================================== */
@@ -701,7 +712,7 @@ static void wl_draw(int n, int cx, int cy, int cw, int ch) {
     wsurf *s = t->used ? t->s : NULL;
     int ox = cx - (t->has_geo ? t->gx : 0), oy = cy - (t->has_geo ? t->gy : 0);
     for (int y = y0; y < y1; y++) {
-        uint32_t *d = &back[(size_t)y * W];
+        uint32_t *d = &back[(size_t)y * BW];
         int sy = y - oy;
         /* the part of this row the picture covers */
         int ax = x0, bx = x1;
@@ -735,7 +746,7 @@ static void wl_draw(int n, int cx, int cy, int cw, int ch) {
         if (!u->px) continue;
         int ux0 = imax(x0, sxs[k]), ux1 = imin(x1, sxs[k] + u->w), uy0 = imax(y0, sys[k]), uy1 = imin(y1, sys[k] + u->h);
         for (int y = uy0; y < uy1; y++) {
-            uint32_t *d = &back[(size_t)y * W];
+            uint32_t *d = &back[(size_t)y * BW];
             const uint32_t *p = u->px + (size_t)(y - sys[k]) * u->w - sxs[k];
             for (int x = ux0; x < ux1; x++) {
                 uint32_t c = p[x], a = u->alpha ? c >> 24 : 255;
@@ -1006,8 +1017,9 @@ static void pop_place(wpop *p) {
         int y = (gr == 1 || gr == 5 || gr == 7) ? ay - q->h : (gr == 2 || gr == 6 || gr == 8) ? ay : ay - q->h / 2;
         x += q->ox; y += q->oy;
         int sx = px + x, sy = py + y, redo = 0;
+        int SL = px >= W && BW > W ? W : 0, SR = px >= W && BW > W ? BW : W;   /* the screen the window is on */
         /* off the screen? flip to the other side if allowed (once), otherwise slide */
-        if (pass == 0 && (q->cadj & 4) && (sx + q->w > W || sx < 0)) {
+        if (pass == 0 && (q->cadj & 4) && (sx + q->w > SR || sx < SL)) {
             static const int fh[9] = { 0, 1, 2, 4, 3, 7, 8, 5, 6 };
             q->anchor = fh[q->anchor % 9]; q->gravity = fh[q->gravity % 9]; redo = 1;
         }
@@ -1016,8 +1028,8 @@ static void pop_place(wpop *p) {
             q->anchor = fv[q->anchor % 9]; q->gravity = fv[q->gravity % 9]; redo = 1;
         }
         if (redo) continue;
-        if (sx + q->w > W) sx = W - q->w;
-        if (sx < 0) sx = 0;
+        if (sx + q->w > SR) sx = SR - q->w;
+        if (sx < SL) sx = SL;
         if (sy + q->h > H) sy = H - q->h;
         if (sy < 0) sy = 0;
         p->x = sx - px; p->y = sy - py;
@@ -1055,7 +1067,7 @@ static void draw_surface_at(wsurf *s, int sx, int sy, int depth) {
     if (!s || !s->px || depth > 4) return;
     int x0 = imax(clip_x0, sx), x1 = imin(clip_x1, sx + s->w), y0 = imax(clip_y0, sy), y1 = imin(clip_y1, sy + s->h);
     for (int y = y0; y < y1; y++) {
-        uint32_t *d = &back[(size_t)y * W];
+        uint32_t *d = &back[(size_t)y * BW];
         const uint32_t *pp = s->px + (size_t)(y - sy) * s->w - sx;
         for (int x = x0; x < x1; x++) {
             uint32_t c = pp[x], a = s->alpha ? c >> 24 : 255;
@@ -1429,6 +1441,54 @@ static int wl_keymap_setup(void) {
     if (kmap_fd < 0 || write(kmap_fd, str, kmap_size) != (ssize_t)kmap_size) { free(str); return -1; }
     free(str);
     return 0;
+}
+
+/* Type text (an emoji) into the focused app: give it, for a moment, a keyboard
+   whose keys are exactly those characters, press them, then give its normal
+   keyboard back. (The way tools like wtype do it.) Returns 0 if no app has focus. */
+static int wl_type_text(const char *utf8) {
+    if (!kb_focus || !xkb_ctx) return 0;
+    uint32_t cps[16]; int n = 0;
+    for (const unsigned char *p = (const unsigned char *)utf8; *p && n < 16; ) {
+        uint32_t c; int l;
+        if (*p < 0x80) { c = *p; l = 1; } else if ((*p >> 5) == 6) { c = *p & 31; l = 2; } else if ((*p >> 4) == 14) { c = *p & 15; l = 3; } else { c = *p & 7; l = 4; }
+        for (int k = 1; k < l; k++) { if (!p[k]) return 0; c = (c << 6) | (p[k] & 63); }
+        p += l; cps[n++] = c;
+    }
+    if (!n) return 0;
+    char *src = NULL; size_t sl = 0; FILE *f = open_memstream(&src, &sl); if (!f) return 0;
+    fprintf(f, "xkb_keymap {\nxkb_keycodes \"ccos\" { minimum = 8; maximum = 255;");
+    for (int i = 0; i < n; i++) fprintf(f, " <T%d> = %d;", i, 10 + i);       /* evdev keys 2.. */
+    fprintf(f, " };\nxkb_types \"ccos\" { include \"complete\" };\nxkb_compatibility \"ccos\" { include \"complete\" };\nxkb_symbols \"ccos\" {");
+    for (int i = 0; i < n; i++) fprintf(f, " key <T%d> { [ U%04X ] };", i, cps[i]);
+    fprintf(f, " };\n};\n");
+    fclose(f);
+    struct xkb_keymap *km = xkb_keymap_new_from_string(xkb_ctx, src, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    free(src);
+    if (!km) return 0;
+    char *full = xkb_keymap_get_as_string(km, XKB_KEYMAP_FORMAT_TEXT_V1);
+    xkb_keymap_unref(km);
+    if (!full) return 0;
+    uint32_t sz = (uint32_t)strlen(full) + 1;
+    int fd = memfd_create("ccos-type", MFD_CLOEXEC);
+    if (fd < 0 || write(fd, full, sz) != (ssize_t)sz) { free(full); if (fd >= 0) close(fd); return 0; }
+    free(full);
+    struct wl_client *c = wl_resource_get_client(kb_focus->res);
+    struct wl_resource *r;
+    wl_resource_for_each(r, &wl_keyboards) {
+        if (wl_resource_get_client(r) != c) continue;
+        wl_keyboard_send_keymap(r, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, sz);
+        wl_keyboard_send_modifiers(r, wl_serial(), 0, 0, 0, 0);
+        for (int i = 0; i < n; i++) {
+            wl_keyboard_send_key(r, wl_serial(), wl_now(), (uint32_t)(2 + i), WL_KEYBOARD_KEY_STATE_PRESSED);
+            wl_keyboard_send_key(r, wl_serial(), wl_now(), (uint32_t)(2 + i), WL_KEYBOARD_KEY_STATE_RELEASED);
+        }
+        wl_keyboard_send_keymap(r, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, kmap_fd, kmap_size);   /* the real keyboard again */
+        wl_keyboard_send_modifiers(r, wl_serial(), mods_dep, mods_lat, mods_lck, mods_grp);
+    }
+    close(fd);
+    if (wl_dpy) wl_display_flush_clients(wl_dpy);
+    return 1;
 }
 
 /* the keyboard layout changed in Settings: tell every app */

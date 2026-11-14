@@ -119,6 +119,28 @@ Desktop controls:
   The bell (right of the clock)      notification centre: every notification is
                                      kept here after its card goes away. The
                                      number on the bell is how many you missed.
+                                     Focus (do not disturb): Off / 30 min / 1 hour
+                                     / Until off at the top. Notifications still
+                                     land in the list but don't pop up or chime;
+                                     the bell turns into a moon. Alarms still ring.
+  Windows + Tab                      Task View: every window of this desktop as a
+                                     picture, and your desktops along the top.
+                                     Click a window to go to it, drag one onto a
+                                     desktop to move it there, + New desktop.
+  Windows + Ctrl + Left / Right      the desktop before / after (virtual desktops)
+  Windows + Ctrl + D / F4            a new desktop / close this one (its windows
+                                     move to the one before)
+  Windows + Ctrl + Shift + arrows    take the active window to the next desktop
+  Windows + .  (or Windows + ;)      emoji: search by name or pick a group, click
+                                     to type it into the app you're in (Firefox,
+                                     Discord...). Recently used ones come first.
+  Windows + P                        a second screen (HDMI, DisplayPort, USB-C):
+                                     PC screen only / Duplicate / Extend /
+                                     Second screen only. ccos remembers it and
+                                     uses it when you plug a screen in. Extend:
+                                     drag windows over to the right; the taskbar
+                                     stays on the laptop. Windows + Up maximizes
+                                     a window on the screen it's on.
   Alt + Tab                          switch windows: hold Alt, tap Tab to step
                                      through big previews (Shift goes back),
                                      let go of Alt to switch. Esc cancels.
@@ -261,6 +283,17 @@ Apps (start menu):
   Calendar     a month, with a dot on days that have something. Pick a day,
                type a time (18:30) and what it is, Add reminder; at that time
                a notification pops up, even with Calendar closed. Saved on D:.
+  Clock        Alarm (repeat on days you pick, Snooze 5 min), Timer (presets or
+               type minutes like 25 or 2:30), Stopwatch (with laps), World clock
+               (add cities). Alarms and the timer ring with Clock closed and in
+               Focus mode too. Saved on D:.
+  PDF viewer   double-click a .pdf (or open one from Firefox's downloads):
+               scroll through the pages, - / Fit / + zoom (Ctrl + plus/minus),
+               < > or arrow keys for pages, Copy page text.
+  Game controllers  which controllers are connected (USB or Bluetooth, with the
+               battery for PlayStation / Switch ones) and a live test: buttons,
+               sticks and triggers light up; Test rumble. Games read the
+               controllers themselves. A notification says when one connects.
   System Monitor  processor and memory graphs for the last minute, D:'s free
                space, the processor temperature, and the running programs
                (busiest first). Pick one and End task stops it.

@@ -32,7 +32,7 @@ static void thumb_draw(const Thumb *t, int x, int y) {
     if (!t->px) return;
     fill_rect(x + 2, y + 3, t->w, t->h, RGB(0, 0, 0), 50);
     for (int j = imax(y, clip_y0); j < imin(y + t->h, clip_y1); j++)
-        for (int i = imax(x, clip_x0); i < imin(x + t->w, clip_x1); i++) back[(size_t)j * W + i] = t->px[(j - y) * t->w + (i - x)];
+        for (int i = imax(x, clip_x0); i < imin(x + t->w, clip_x1); i++) back[(size_t)j * BW + i] = t->px[(j - y) * t->w + (i - x)];
 }
 
 /* ---- Alt + Tab ---- */
@@ -57,10 +57,10 @@ static void at_close(void) {
 static void at_tab(int back_) {
     if (!at.open) {
         at.n = 0;
-        for (int k = nz - 1; k >= 0; k--) if (wins[zorder[k]].open) at.win[at.n++] = zorder[k];   /* the newest first */
+        for (int k = nz - 1; k >= 0; k--) if (wins[zorder[k]].open && wins[zorder[k]].desk == cur_desk) at.win[at.n++] = zorder[k];   /* the newest first */
         for (int i = 0; i < MAXWIN && at.n < MAXWIN; i++) {                   /* (minimized ones too) */
             int in = 0; for (int k = 0; k < at.n; k++) if (at.win[k] == i) in = 1;
-            if (wins[i].open && !in) at.win[at.n++] = i;
+            if (wins[i].open && !in && wins[i].desk == cur_desk) at.win[at.n++] = i;
         }
         if (at.n < 2) { at.n = 0; return; }
         set_menu(0); pop_close();

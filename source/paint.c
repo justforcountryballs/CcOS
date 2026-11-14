@@ -179,13 +179,13 @@ static void paint_draw(int cx, int cy, int cw, int ch) {
     fill_rect(cx + ax + 3, cy + ay + 3, dw, dh, RGB(0, 0, 0), 50);
     int x0 = imax(cx + ax, clip_x0), x1 = imin(cx + ax + dw, clip_x1), y0 = imax(cy + ay, clip_y0), y1 = imin(cy + ay + dh, clip_y1);
     for (int y = y0; y < y1; y++)
-        memcpy(&back[(size_t)y * W + x0], &pt.px[(size_t)(y - cy - ay + pt.scrolly) * pt.w + (x0 - cx - ax + pt.scrollx)], (size_t)imax(0, x1 - x0) * 4);
+        memcpy(&back[(size_t)y * BW + x0], &pt.px[(size_t)(y - cy - ay + pt.scrolly) * pt.w + (x0 - cx - ax + pt.scrollx)], (size_t)imax(0, x1 - x0) * 4);
     if (pt.down && (pt.tool == PT_LINE || pt.tool == PT_RECT || pt.tool == PT_ELLIPSE)) {   /* the shape being dragged */
         uint32_t *tmp = pt_copy();
         if (tmp) {
             pt_shape(tmp, pt.tool, pt.sx, pt.sy, pt.lx, pt.ly);
             for (int y = y0; y < y1; y++)
-                memcpy(&back[(size_t)y * W + x0], &tmp[(size_t)(y - cy - ay + pt.scrolly) * pt.w + (x0 - cx - ax + pt.scrollx)], (size_t)imax(0, x1 - x0) * 4);
+                memcpy(&back[(size_t)y * BW + x0], &tmp[(size_t)(y - cy - ay + pt.scrolly) * pt.w + (x0 - cx - ax + pt.scrollx)], (size_t)imax(0, x1 - x0) * 4);
             free(tmp);
         }
     }

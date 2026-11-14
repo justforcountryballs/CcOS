@@ -62,6 +62,12 @@ ccos is built from these open-source projects:
                           and pool.ntp.org for the time)
   GNU GRUB 2.12         GPL-3.0          https://www.gnu.org/software/grub  (starts ccos from the USB stick)
   wireless-regdb        ISC              (which Wi-Fi channels are allowed per country)
+  MuPDF 1.23 (+ mujs, gumbo, jbig2dec, openjpeg)  AGPL-3.0 / ISC / Apache-2.0 / AGPL-3.0 / BSD-2
+                          https://mupdf.com  (ccos-pdf draws PDF pages; ccos-pdf's own
+                          source, pdf.c, is under the AGPL-3.0 as MuPDF requires)
+  Noto Color Emoji        OFL-1.1          https://github.com/googlefonts/noto-emoji
+                          (the emoji picker's pictures, emoji.gz, made by emojigen/)
+  Unicode emoji-test.txt  Unicode licence  (emoji names and groups)
 
 Everything else (the desktop, apps, splash and sounds) was written for ccos.
 

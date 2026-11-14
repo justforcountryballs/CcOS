@@ -23,21 +23,21 @@ static int anim_hides(int idx) { return an.kind != AN_NONE && an.win == idx && (
 /* a picture of window idx, alone (nothing on top of it) */
 static uint32_t *anim_snap(int idx, int *x, int *y, int *w, int *h) {
     Win *wn = &wins[idx];
-    int X = imax(0, wn->x), Y = imax(0, wn->y), X1 = imin(W, wn->x + wn->w), Y1 = imin(H, wn->y + wn->h);
+    int X = imax(0, wn->x), Y = imax(0, wn->y), X1 = imin(BW, wn->x + wn->w), Y1 = imin(H, wn->y + wn->h);
     if (X1 <= X || Y1 <= Y) return NULL;
     int ww = X1 - X, hh = Y1 - Y;
     uint32_t *save = malloc((size_t)ww * hh * 4), *out = malloc((size_t)ww * hh * 4);
     if (!save || !out) { free(save); free(out); return NULL; }
-    for (int r = 0; r < hh; r++) memcpy(save + (size_t)r * ww, &back[(size_t)(Y + r) * W + X], (size_t)ww * 4);
-    int ox0 = clip_x0, oy0 = clip_y0, ox1 = clip_x1, oy1 = clip_y1, om = wn->minimized, ok = an.kind; int ow = an.win;
+    for (int r = 0; r < hh; r++) memcpy(save + (size_t)r * ww, &back[(size_t)(Y + r) * BW + X], (size_t)ww * 4);
+    int ox0 = clip_x0, oy0 = clip_y0, ox1 = clip_x1, oy1 = clip_y1, om = wn->minimized, ok = an.kind; int ow = an.win, ood = wn->offdesk;
     clip_x0 = X; clip_y0 = Y; clip_x1 = X1; clip_y1 = Y1;
-    for (int r = 0; r < hh; r++) memcpy(&back[(size_t)(Y + r) * W + X], &wall[(size_t)(Y + r) * W + X], (size_t)ww * 4);
-    wn->minimized = 0; an.kind = AN_NONE;
+    for (int r = 0; r < hh; r++) memcpy(&back[(size_t)(Y + r) * BW + X], &wall[(size_t)(Y + r) * BW + X], (size_t)ww * 4);
+    wn->minimized = 0; wn->offdesk = 0; an.kind = AN_NONE;
     draw_window(idx);
-    wn->minimized = om; an.kind = ok; an.win = ow;
+    wn->minimized = om; wn->offdesk = ood; an.kind = ok; an.win = ow;
     for (int r = 0; r < hh; r++) {
-        memcpy(out + (size_t)r * ww, &back[(size_t)(Y + r) * W + X], (size_t)ww * 4);
-        memcpy(&back[(size_t)(Y + r) * W + X], save + (size_t)r * ww, (size_t)ww * 4);
+        memcpy(out + (size_t)r * ww, &back[(size_t)(Y + r) * BW + X], (size_t)ww * 4);
+        memcpy(&back[(size_t)(Y + r) * BW + X], save + (size_t)r * ww, (size_t)ww * 4);
     }
     clip_x0 = ox0; clip_y0 = oy0; clip_x1 = ox1; clip_y1 = oy1;
     free(save);
@@ -140,7 +140,7 @@ static void anim_draw(void) {
         float f = (y - ytop) / (ybot - ytop);
         const uint32_t *row = an.px + (size_t)imin(an.h - 1, (int)(f * an.h)) * an.w;
         int xa = imax((int)xl, clip_x0), xb = imin((int)xr, clip_x1);
-        uint32_t *d = &back[(size_t)y * W];
+        uint32_t *d = &back[(size_t)y * BW];
         for (int x = xa; x < xb; x++) d[x] = row[imin(an.w - 1, (int)((x - xl) / (xr - xl) * an.w))];
     }
 }

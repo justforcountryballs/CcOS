@@ -10,8 +10,11 @@ static void toggle_max(int idx);
 enum { SZ_NONE, SZ_L, SZ_R, SZ_TL, SZ_TR, SZ_BL, SZ_BR, SZ_MAX };
 static int snap_zone, drag_sx, drag_sy, drag_armed;      /* armed: a maximized/snapped window, not moved yet */
 
+static int snap_mon_x;                                    /* a point on the screen being snapped on */
+static void mon_of(int x, int *x0, int *w, int *h, int *wh);
 static void snap_rect(int z, int *x, int *y, int *w, int *h) {
-    int aw = W, ah = H - TASKBAR_H, hw = aw / 2, hh = ah / 2;
+    int mx0, mw, mh, wh; mon_of(snap_mon_x, &mx0, &mw, &mh, &wh);
+    int aw = mw, ah = wh, hw = aw / 2, hh = ah / 2;
     switch (z) {
     case SZ_L:  *x = 0;  *y = 0;  *w = hw;      *h = ah; break;
     case SZ_R:  *x = hw; *y = 0;  *w = aw - hw; *h = ah; break;
@@ -21,11 +24,13 @@ static void snap_rect(int z, int *x, int *y, int *w, int *h) {
     case SZ_BR: *x = hw; *y = hh; *w = aw - hw; *h = ah - hh; break;
     default:    *x = 0;  *y = 0;  *w = aw;      *h = ah; break;
     }
+    *x += mx0;
 }
 static int snap_zone_at(int x, int y) {
-    int corner = 70;
-    if (x <= 3) return y < corner ? SZ_TL : y > H - TASKBAR_H - corner ? SZ_BL : SZ_L;
-    if (x >= W - 4) return y < corner ? SZ_TR : y > H - TASKBAR_H - corner ? SZ_BR : SZ_R;
+    int corner = 70, mx0, mw, mh, wh; mon_of(x, &mx0, &mw, &mh, &wh);
+    snap_mon_x = x;
+    if (x <= mx0 + 3) return y < corner ? SZ_TL : y > wh - corner ? SZ_BL : SZ_L;
+    if (x >= mx0 + mw - 4) return y < corner ? SZ_TR : y > wh - corner ? SZ_BR : SZ_R;
     if (y <= 2) return SZ_MAX;
     return SZ_NONE;
 }
@@ -109,11 +114,12 @@ static void snap_draw(void) {
 /* Windows + Left/Right/Up/Down */
 static void snap_key(int code) {
     int i = active_win();
-    if (i < 0 || !wins[i].open || wins[i].minimized || wins[i].no_max) {
+    if (i < 0 || !wins[i].open || WHIDDEN(&wins[i]) || wins[i].no_max) {
         if (i >= 0 && code == KEY_DOWN) minimize_win(i);
         return;
     }
     Win *w = &wins[i];
+    snap_mon_x = w->x + w->w / 2;
     int s = w->maximized ? SZ_MAX : w->snap;
     if (code == KEY_LEFT)  snap_to(i, s == SZ_R ? SZ_NONE : s == SZ_TR ? SZ_TL : s == SZ_BR ? SZ_BL : SZ_L);
     else if (code == KEY_RIGHT) snap_to(i, s == SZ_L ? SZ_NONE : s == SZ_TL ? SZ_TR : s == SZ_BL ? SZ_BR : SZ_R);

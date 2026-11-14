@@ -137,7 +137,7 @@ static void fd_build(void) {
             if (fd.tab == FT_VIDEOS && mk != MK_VIDEO) continue;
             if (fd.tab == FT_MUSIC && mk != MK_AUDIO) continue;
             if (fd.tab == FT_DOWNLOADS && uf != 2 && strncmp(p, "/data/Downloads/", 16)) continue;
-            int icon = mk == MK_IMAGE ? ICON_PHOTO : mk == MK_VIDEO ? ICON_VIDEO : mk == MK_AUDIO ? ICON_MUSIC : ex_is_archive(nm) ? ICON_ZIP : ICON_FILE;
+            int icon = mk == MK_IMAGE ? ICON_PHOTO : mk == MK_VIDEO ? ICON_VIDEO : mk == MK_AUDIO ? ICON_MUSIC : ex_is_archive(nm) ? ICON_ZIP : is_pdf(nm) ? ICON_PDF : ICON_FILE;
             fd_add(nm, p, icon, 0, ms_mtime ? ms_mtime[i] : 0);
         }
     }
@@ -199,7 +199,7 @@ static void finder_draw(int cx, int cy, int cw, int ch) {
                 int w = fd_th[t].w, h = fd_th[t].h, x0 = tx + (FD_TW - w) / 2, y0 = ty + 8 + (FD_PH - h) / 2;
                 fill_rect(x0 + 1, y0 + 2, w, h, RGB(0, 0, 0), 40);
                 for (int y = imax(y0, clip_y0); y < imin(y0 + h, clip_y1); y++)
-                    for (int x = imax(x0, clip_x0); x < imin(x0 + w, clip_x1); x++) back[y * W + x] = fd_th[t].px[(y - y0) * w + (x - x0)];
+                    for (int x = imax(x0, clip_x0); x < imin(x0 + w, clip_x1); x++) back[y * BW + x] = fd_th[t].px[(y - y0) * w + (x - x0)];
                 done = 1;
             }
         }

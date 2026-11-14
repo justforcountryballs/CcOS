@@ -271,7 +271,7 @@ static void tm_preview(const TmTheme *t, int x, int y, int w, int h) {
         for (int j = imax(y, clip_y0); j < imin(y + h, clip_y1); j++)
             for (int i = imax(x, clip_x0); i < imin(x + w, clip_x1); i++) {
                 const uint8_t *q = big[wi] + ((size_t)((j - y) * bh_[wi] / h) * bw_[wi] + (i - x) * bw_[wi] / w) * 4;
-                back[(size_t)j * W + i] = RGB(q[0], q[1], q[2]);
+                back[(size_t)j * BW + i] = RGB(q[0], q[1], q[2]);
             }
     /* the theme's colours, worked out like TH() does */
     int o_dark = set_dark, o_tv = th_ver; uint32_t o_acc = set_accent; char o_over[600]; snprintf(o_over, sizeof o_over, "%s", set_tover);

@@ -8,14 +8,14 @@ static int set_glass = 55;
 static uint32_t *gb; static int gbw, gbh;        /* the blurred background, 8 times smaller */
 #define GB_S 8
 static void glass_make(void) {
-    gbw = (W + GB_S - 1) / GB_S; gbh = (H + GB_S - 1) / GB_S;
+    gbw = (BW + GB_S - 1) / GB_S; gbh = (H + GB_S - 1) / GB_S;
     uint32_t *a = realloc(gb, (size_t)gbw * gbh * 4), *t = malloc((size_t)gbw * gbh * 4);
     if (!a || !t) { free(t); if (a) gb = a; return; }
     gb = a;
     for (int y = 0; y < gbh; y++) for (int x = 0; x < gbw; x++) {          /* average each 8 x 8 block */
         unsigned r = 0, g = 0, b = 0, n = 0;
-        for (int j = y * GB_S; j < imin(H, y * GB_S + GB_S); j += 2) for (int i = x * GB_S; i < imin(W, x * GB_S + GB_S); i += 2) {
-            uint32_t c = wall[(size_t)j * W + i]; r += R(c); g += G(c); b += B(c); n++;
+        for (int j = y * GB_S; j < imin(H, y * GB_S + GB_S); j += 2) for (int i = x * GB_S; i < imin(BW, x * GB_S + GB_S); i += 2) {
+            uint32_t c = wall[(size_t)j * BW + i]; r += R(c); g += G(c); b += B(c); n++;
         }
         gb[y * gbw + x] = n ? RGB(r / n, g / n, b / n) : 0;
     }
@@ -52,7 +52,7 @@ static void glass_fill(int x, int y, int w, int h, int r, uint32_t tint, int hx,
     int x0 = x, y0 = y, x1 = x + w, y1 = y + h;
     if (!clip_range(&x0, &y0, &x1, &y1)) return;
     for (int j = y0; j < y1; j++) {
-        uint32_t *d = &back[(size_t)j * W];
+        uint32_t *d = &back[(size_t)j * BW];
         for (int i = x0; i < x1; i++) {
             if (hw > 0 && i >= hx && i < hx + hw && j >= hy && j < hy + hh) { i = hx + hw - 1; continue; }
             float cov = r ? round_cov(i, j, x, y, w, h, r) : 1;

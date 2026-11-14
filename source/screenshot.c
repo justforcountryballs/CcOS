@@ -50,7 +50,7 @@ static unsigned char *png_encode(const uint32_t *src, int sw, int x, int y, int 
 
 static void shot_save(const uint32_t *src, int x, int y, int w, int h) {
     if (w < 2 || h < 2) return;
-    size_t n; unsigned char *png = png_encode(src, W, x, y, w, h, &n);
+    size_t n; unsigned char *png = png_encode(src, BW, x, y, w, h, &n);
     if (!png) { toast(ICON_PHOTO, "Screenshot", "Couldn't make the picture."); return; }
     mkdir("/data", 0755); mkdir("/data/Images", 0755); mkdir(SHOT_DIR, 0755);
     time_t t = time(NULL); struct tm tm; localtime_r(&t, &tm);
@@ -63,7 +63,7 @@ static void shot_save(const uint32_t *src, int x, int y, int w, int h) {
     if (ok) toast(ICON_PHOTO, "Screenshot saved", "In Images > Screenshots, and on the clipboard: paste it into an app.");
     else toast(ICON_PHOTO, "Screenshot", "It's on the clipboard, but couldn't be saved (is D: full?).");
 }
-static void shot_full(void) { shot_save(back, 0, 0, W, H); }
+static void shot_full(void) { shot_save(back, 0, 0, BW, H); }
 
 /* ---- Win+Shift+S: pick a part ---- */
 static void snip_rect(int *x, int *y, int *w, int *h) {
@@ -76,12 +76,12 @@ static void snip_render(int x0, int y0, int x1, int y1) {
     if (!snip_drag) bw = bh = 0;
     for (int y = y0; y < y1; y++)
         for (int x = x0; x < x1; x++) {
-            uint32_t c = snip_img[y * W + x];
+            uint32_t c = snip_img[y * BW + x];
             int in = x >= bx && x < bx + bw && y >= by && y < by + bh;
             if (!in) c = RGB(R(c) * 45 / 100, G(c) * 45 / 100, B(c) * 45 / 100);
             if (bw && ((y >= by - 1 && y <= by + bh && (x == bx - 1 || x == bx + bw)) ||
                        (x >= bx - 1 && x <= bx + bw && (y == by - 1 || y == by + bh)))) c = RGB(0x3c, 0x9c, 0xff);
-            back[y * W + x] = c;
+            back[y * BW + x] = c;
         }
     if (!snip_drag) {                                  /* the hint, top middle */
         clip_x0 = x0; clip_y0 = y0; clip_x1 = x1; clip_y1 = y1;
@@ -95,11 +95,11 @@ static void snip_render(int x0, int y0, int x1, int y1) {
 static void snip_start(void) {
     if (snip_on) return;
     free(snip_img);
-    snip_img = malloc((size_t)W * H * 4);
+    snip_img = malloc((size_t)BW * H * 4);
     if (!snip_img) return;
-    memcpy(snip_img, back, (size_t)W * H * 4);
+    memcpy(snip_img, back, (size_t)BW * H * 4);
     snip_on = 1; snip_drag = 0;
-    snip_render(0, 0, W, H);
+    snip_render(0, 0, BW, H);
 }
 static void snip_end(int save) {
     if (!snip_on) return;
@@ -111,7 +111,7 @@ static void snip_end(int save) {
     free(snip_img); snip_img = NULL;
 }
 static void snip_button(int down) {
-    if (down) { snip_drag = 1; snip_x0 = snip_x1 = mx; snip_y0 = snip_y1 = my; snip_render(0, 0, W, H); }
+    if (down) { snip_drag = 1; snip_x0 = snip_x1 = mx; snip_y0 = snip_y1 = my; snip_render(0, 0, BW, H); }
     else if (snip_drag) snip_end(1);
 }
 static void snip_motion(void) {
@@ -120,6 +120,6 @@ static void snip_motion(void) {
     snip_x1 = mx; snip_y1 = my;
     int nx, ny, nw, nh; snip_rect(&nx, &ny, &nw, &nh);
     int x0 = imax(0, imin(ox, nx) - 2), y0 = imax(0, imin(oy, ny) - 2);
-    int x1 = imin(W, imax(ox + ow, nx + nw) + 2), y1 = imin(H, imax(oy + oh, ny + nh) + 2);
+    int x1 = imin(BW, imax(ox + ow, nx + nw) + 2), y1 = imin(H, imax(oy + oh, ny + nh) + 2);
     snip_render(x0, y0, x1, y1);
 }
