@@ -478,6 +478,8 @@ Updates (Settings > Update):
   version to them once with Rufus; from then on, updates come by themselves.
 
 Shell commands: poweroff, reboot (show the shutdown screen)
+  mkf hi.txt : hello!   makes hi.txt with "hello!" inside (mkf hi.txt = empty file;
+                        from the home folder it goes into Documents)
 Closing the QEMU window = pulling the plug (no shutdown screen)
 
 Adding things to the start menu: edit left_items / right_items near the

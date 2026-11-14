@@ -5,7 +5,8 @@ PS1='\[\e[1;36m\]ccos\[\e[0m\] \[\e[1;34m\]\w\[\e[0m\] \[\e[1;32m\]\$\[\e[0m\] '
 PROMPT_DIRTRIM=3
 # history: kept on the stick, shared between Terminals, Ctrl+R searches it
 if mountpoint -q /data 2>/dev/null; then HISTFILE=/data/.bash_history; fi
-HISTSIZE=5000; HISTFILESIZE=20000; HISTCONTROL=ignoreboth:erasedups
+HISTSIZE=5000; HISTFILESIZE=20000; HISTCONTROL=ignoredups:erasedups
+set +H   # a ! in what you type stays a ! (no history tricks)
 shopt -s histappend checkwinsize cdspell autocd globstar 2>/dev/null
 PROMPT_COMMAND='history -a'
 # colours
@@ -14,6 +15,13 @@ alias grep='grep --color=auto'
 alias ..='cd ..' ...='cd ../..'
 alias py=python3 python=python3 pip='python3 -m pip' pip3='python3 -m pip'
 alias D:='cd /data' d:='cd /data'
+# mkf NAME : TEXT  - the text is taken from the line exactly as typed, so ' * ; & and friends are fine
+alias mkf='_ccos_mkf #'
+_ccos_mkf() {
+    local l re='(^|[;&|(][[:space:]]*)mkf([[:space:]](.*))?$'
+    l=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')
+    if [[ $l =~ $re ]]; then /usr/bin/mkf --raw "${BASH_REMATCH[3]}"; else /usr/bin/mkf; fi
+}
 export LS_COLORS='di=1;34:ln=1;36:ex=1;32:*.py=0;33:*.zip=1;31:*.7z=1;31:*.rar=1;31:*.gz=1;31:*.jpg=1;35:*.png=1;35:*.mp4=1;35:*.mp3=0;36:*.pdf=0;31'
 # Tab completion for commands' options (and folders, files...)
 [ -f /usr/share/bash-completion/bash_completion ] && . /usr/share/bash-completion/bash_completion
@@ -29,6 +37,7 @@ ${b}Files${n}
   cd FOLDER         go into a folder (cd .. goes up, D: goes to your D: drive)
   cp A B / mv A B   copy / move or rename          rm FILE   delete (no Recycle Bin!)
   mkdir NAME        make a folder                  tree      folders as a tree
+  mkf hi.txt        make a file (mkf hi.txt : hello!  puts "hello!" in it)
   nano FILE         edit a text file (Ctrl+S saves, Ctrl+X quits)
   cat / less FILE   show / read a file (q quits)   find . -name '*.txt'   find files
   zip -r a.zip DIR  zip a folder    unzip a.zip    7z x FILE   unpack .7z .rar ...
@@ -56,4 +65,4 @@ HELP
 }
 
 # the welcome text, in a new Terminal
-shopt -q login_shell && [ -f /etc/motd ] && cat /etc/motd
+shopt -q login_shell && [ -z "$CCOS_NO_MOTD" ] && [ -f /etc/motd ] && cat /etc/motd
