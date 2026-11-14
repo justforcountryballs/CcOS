@@ -28,10 +28,12 @@ static void cal_load(void) {
 }
 static void cal_save(void) {
     mkdir("/data", 0755);
-    FILE *f = fopen(CAL_FILE ".tmp", "w"); if (!f) return;
+    char *mb = NULL; size_t ml = 0; FILE *f = open_memstream(&mb, &ml); if (!f) return;
     for (int i = 0; i < cal_n; i++)
         fprintf(f, "%04d-%02d-%02d %02d:%02d %d %s\n", cal_ev[i].y, cal_ev[i].m, cal_ev[i].d, cal_ev[i].hh, cal_ev[i].mm, cal_ev[i].done, cal_ev[i].title);
-    fclose(f); rename(CAL_FILE ".tmp", CAL_FILE); bg_sync();
+    fclose(f);
+    if (mb) aw_save(CAL_FILE, mb, ml, 1, "the calendar");
+    free(mb); bg_sync();
 }
 static int cal_cmp(const void *a, const void *b) {
     const typeof(cal_ev[0]) *x = a, *y = b;
@@ -80,7 +82,7 @@ static void cal_day_events(int *idx, int *n) {
     for (int i = 0; i < cal_n && *n < 32; i++) if (cal_ev[i].y == cal.y && cal_ev[i].m == cal.m && cal_ev[i].d == cal.sel_d) idx[(*n)++] = i;
 }
 static void calendar_draw(int cx, int cy, int cw, int ch) {
-    const int dark = set_style && set_dark;
+    const int dark = 0;   /* (in dark mode, ccos darkens windows like this one itself) */
     uint32_t bg = dark ? RGB(0x20, 0x21, 0x24) : RGB(255, 255, 255), text = dark ? RGB(0xe8, 0xea, 0xee) : RGB(0x1e, 0x22, 0x28);
     uint32_t grey = dark ? RGB(0x9a, 0xa0, 0xaa) : RGB(0x70, 0x78, 0x84), line = dark ? RGB(0x3a, 0x3c, 0x42) : RGB(0xe2, 0xe6, 0xec);
     uint32_t acc = RGB(0x1e, 0x78, 0xe0);

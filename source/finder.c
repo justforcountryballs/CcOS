@@ -137,7 +137,7 @@ static void fd_build(void) {
             if (fd.tab == FT_VIDEOS && mk != MK_VIDEO) continue;
             if (fd.tab == FT_MUSIC && mk != MK_AUDIO) continue;
             if (fd.tab == FT_DOWNLOADS && uf != 2 && strncmp(p, "/data/Downloads/", 16)) continue;
-            int icon = mk == MK_IMAGE ? ICON_PHOTO : mk == MK_VIDEO ? ICON_VIDEO : mk == MK_AUDIO ? ICON_MUSIC : ex_is_archive(nm) ? ICON_ZIP : ICON_FILE;
+            int icon = mk == MK_IMAGE ? ICON_PHOTO : mk == MK_VIDEO ? ICON_VIDEO : mk == MK_AUDIO ? ICON_MUSIC : ex_is_archive(nm) ? ICON_ZIP : is_pdf(nm) ? ICON_PDF : ICON_FILE;
             fd_add(nm, p, icon, 0, ms_mtime ? ms_mtime[i] : 0);
         }
     }
@@ -152,7 +152,7 @@ static void fd_grid(int cw, int ch, int *gx, int *gy, int *cols, int *gh) {
     *gx = FD_SIDE + 12; *gy = FD_TOP; *cols = imax(1, (cw - FD_SIDE - 24) / FD_TW); *gh = ch - FD_TOP - 4;
 }
 static void finder_draw(int cx, int cy, int cw, int ch) {
-    const int dark = set_style && set_dark;
+    const int dark = 0;   /* (in dark mode, ccos darkens windows like this one itself) */
     uint32_t bg = dark ? RGB(0x20, 0x21, 0x24) : RGB(255, 255, 255), side = dark ? RGB(0x2a, 0x2b, 0x30) : RGB(0xf2, 0xf4, 0xf8);
     uint32_t text = dark ? RGB(0xe8, 0xea, 0xee) : RGB(0x1e, 0x22, 0x28), grey = dark ? RGB(0x9a, 0xa0, 0xaa) : RGB(0x70, 0x78, 0x84);
     fill_rect(cx, cy, cw, ch, bg, 255);
@@ -199,7 +199,7 @@ static void finder_draw(int cx, int cy, int cw, int ch) {
                 int w = fd_th[t].w, h = fd_th[t].h, x0 = tx + (FD_TW - w) / 2, y0 = ty + 8 + (FD_PH - h) / 2;
                 fill_rect(x0 + 1, y0 + 2, w, h, RGB(0, 0, 0), 40);
                 for (int y = imax(y0, clip_y0); y < imin(y0 + h, clip_y1); y++)
-                    for (int x = imax(x0, clip_x0); x < imin(x0 + w, clip_x1); x++) back[y * W + x] = fd_th[t].px[(y - y0) * w + (x - x0)];
+                    for (int x = imax(x0, clip_x0); x < imin(x0 + w, clip_x1); x++) back[y * BW + x] = fd_th[t].px[(y - y0) * w + (x - x0)];
                 done = 1;
             }
         }
@@ -297,5 +297,5 @@ static void finder_open(void) {
                            .elem_rect = finder_elem_rect, .key = finder_key, .wheel = finder_wheel, .wake = finder_wake,
                            .on_close = finder_on_close };
     int w = open_win(&t, imin(W - 60, FD_W), imin(H - TASKBAR_H - 60, FD_H));
-    if (w >= 0) snprintf(wins[w].cmd, sizeof wins[0].cmd, "@finder");
+    if (w >= 0) { snprintf(wins[w].cmd, sizeof wins[0].cmd, "@finder"); repaint_taskbar(); }
 }

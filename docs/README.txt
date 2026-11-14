@@ -119,6 +119,54 @@ Desktop controls:
   The bell (right of the clock)      notification centre: every notification is
                                      kept here after its card goes away. The
                                      number on the bell is how many you missed.
+                                     Focus (do not disturb): Off / 30 min / 1 hour
+                                     / Until off at the top. Notifications still
+                                     land in the list but don't pop up or chime;
+                                     the bell turns into a moon. Alarms still ring.
+  Windows + Tab                      Task View: every window of this desktop as a
+                                     picture, and your desktops along the top.
+                                     Click a window to go to it, drag one onto a
+                                     desktop to move it there, + New desktop.
+  Windows + Ctrl + Left / Right      the desktop before / after (virtual desktops)
+  Windows + Ctrl + D / F4            a new desktop / close this one (its windows
+                                     move to the one before)
+  Windows + Ctrl + Shift + arrows    take the active window to the next desktop
+  Windows + .  (or Windows + ;)      emoji: search by name or pick a group, click
+                                     to type it into the app you're in (Firefox,
+                                     Discord...). Recently used ones come first.
+  Windows + P                        a second screen (HDMI, DisplayPort, USB-C):
+                                     PC screen only / Duplicate / Extend /
+                                     Second screen only. ccos remembers it and
+                                     uses it when you plug a screen in. Extend:
+                                     drag windows over to the right; the taskbar
+                                     stays on the laptop. Windows + Up maximizes
+                                     a window on the screen it's on.
+  Alt + Tab                          switch windows: hold Alt, tap Tab to step
+                                     through big previews (Shift goes back),
+                                     let go of Alt to switch. Esc cancels.
+  Pointing at a taskbar / Dock app   after a moment a small live preview of
+                                     its window(s) pops up; click one to go
+                                     to it.
+  Window snapping                    drag a window to the left or right edge
+                                     for half the screen, into a corner for a
+                                     quarter, or to the top to maximize. A
+                                     see-through box shows where it lands.
+                                     Drag it away to get its old size back.
+                                     Windows + arrow keys do the same.
+  Windows + Space                    Quick Search (like Spotlight). The first
+                                     time it asks which browser to use. Type
+                                     words (cake recipe) and Enter searches
+                                     the web in that browser; type an address
+                                     (https://..., youtu.be/...) and it opens
+                                     that site. It also finds apps, Settings
+                                     and files as you type.
+  Saving                             settings, Notepad, Paint, Calendar and
+                                     screenshots now save in the background,
+                                     so a slow USB stick no longer freezes
+                                     the desktop while it writes.
+                                     If ccos still freezes for a second or more,
+                                     it writes down what it was waiting for in
+                                     D:\ccos-freeze-log.txt (handy for bug reports).
   Start menu search                  open the start menu and just type: apps,
                                      Settings pages ("wifi", "time", "dark")
                                      and files/folders on D: and in Downloads.
@@ -132,9 +180,35 @@ Desktop controls:
   Ctrl+Alt+Backspace                 quit to the shell (type: desktop  to go back)
 
 Apps (start menu):
+  Themes       (brush icon) whole looks in one click: ccos Light/Dark,
+               Mint, Mint Dark, Nord, Dracula, Sunset, Rose. Tabs to
+               fine-tune Windows (Light/Dark, Glass slider, accent colour),
+               Taskbar (Bar or Dock, Dock size, animations), Icons (folder
+               colour), Mouse pointer (colour and size) and Apps (the look
+               of Flathub apps: default, dark, or GTK themes you install
+               from Flathub right there; restart the app to see it).
+               Get more downloads extra themes from the ccos GitHub page.
+               Both download lists have a search box (or Ctrl+F).
   Terminal     a real Linux terminal (foot). Type commands like on the plain
                command line, but in a window: several at once, mouse selection,
                copy = Ctrl+Shift+C, paste = Ctrl+Shift+V, scroll with the wheel.
+               Type help for a list of useful commands. The shell is bash:
+               Tab finishes names (Tab Tab shows the choices), Up/Down go through
+               earlier commands (type the start first to narrow them), Ctrl+R
+               searches them; history is kept on the stick. Coloured prompt and
+               ls. Also there: nano (easy text editor), htop (running programs),
+               curl, zip / unzip, 7z (unpacks .7z .rar and more), sensors
+               (temperatures), ssh / scp / sftp (keys kept in D:\.ssh), and
+               Python 3.12 (python3; pip install NAME keeps packages on the
+               stick in D:\.python).
+  Python       write Python programs and run them: colours, line numbers,
+               auto-indent, Tab = 4 spaces, Ctrl+/ comments lines, Ctrl+Z undo,
+               Ctrl+D duplicates a line. F5 (Run) runs it; what it prints shows
+               below, and a box under it answers input(). An error marks its
+               line in red. Examples: Hello, Guess the number, Turtle drawing,
+               a window with a button (tkinter)... Programs that draw windows
+               (turtle, tkinter) open in the "X11 apps" window. Saved in
+               D:\Documents\Python; double-click a .py file to open it here.
   Photos       look at pictures (JPG, PNG, GIF, BMP, SVG...). Left/Right
                arrows or the buttons go through the folder; + / - or the
                mouse wheel zoom, 0 fits it to the window; drag a zoomed
@@ -160,11 +234,13 @@ Apps (start menu):
                what's in Documents, Downloads, Pictures, Videos and Music.
                Double-clicking a picture, video or sound in File Explorer
                opens the right one. Firefox saves downloads to Downloads.
-  Style (Settings > Appearance): Classic is the glass look with the blocky
-               pixel font. Modern is flat and solid, with the smooth font,
-               smooth icons and new _ [] X buttons; it has Light and Dark
-               modes. Dark mode also darkens ccos's own apps (Photos,
-               Videos, Solitaire and Flathub apps keep their own colours).
+  Look (Settings > Appearance, or the Themes app): one modern style
+               with the smooth font, Light and Dark modes, and a Glass
+               slider (0-100%) for how much of a frosted copy of the
+               background shows through window frames, the taskbar and the
+               start menu (even at 100% there is still some frosting).
+               Dark mode also darkens ccos's own apps (Photos, Videos,
+               Solitaire and Flathub apps keep their own colours).
   Desktop background: Settings > Appearance has 7 pictures made for ccos
                (Water is the first one). Or use your own: right-click a picture
                in File Explorer > Set as desktop background. Right-click an
@@ -203,6 +279,9 @@ Apps (start menu):
                D: = ccos Data (the save disk: your settings and files)
                Double-click a folder to open it, a text file to open it in
                Notepad. New folder / Rename (F2) / Delete work on D: only.
+               Search box (top right, or Ctrl+F): finds files and folders
+               in the folder you're in and everything under it. Right-click a
+               result > Open file location jumps to its folder.
   Record       records the whole screen into a video (MP4) in Videos. Click
                the red button: the window gets out of the way and a red
                "REC 0:12" button on the taskbar counts; click it (or press
@@ -221,6 +300,17 @@ Apps (start menu):
   Calendar     a month, with a dot on days that have something. Pick a day,
                type a time (18:30) and what it is, Add reminder; at that time
                a notification pops up, even with Calendar closed. Saved on D:.
+  Clock        Alarm (repeat on days you pick, Snooze 5 min), Timer (presets or
+               type minutes like 25 or 2:30), Stopwatch (with laps), World clock
+               (add cities). Alarms and the timer ring with Clock closed and in
+               Focus mode too. Saved on D:.
+  PDF viewer   double-click a .pdf (or open one from Firefox's downloads):
+               scroll through the pages, - / Fit / + zoom (Ctrl + plus/minus),
+               < > or arrow keys for pages, Copy page text.
+  Game controllers  which controllers are connected (USB or Bluetooth, with the
+               battery for PlayStation / Switch ones) and a live test: buttons,
+               sticks and triggers light up; Test rumble. Games read the
+               controllers themselves. A notification says when one connects.
   System Monitor  processor and memory graphs for the last minute, D:'s free
                space, the processor temperature, and the running programs
                (busiest first). Pick one and End task stops it.
