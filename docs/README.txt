@@ -15,6 +15,7 @@ source\init.sh      /init, the first program the kernel runs (boot steps, [  OK 
 source\mkf.sh       the mkf command (make a file the easy way)
 source\ccos-usb.sh  lsusb / cdusb / xusb: USB sticks in the Terminal
 source\ccos-hint.sh the "usual Linux way" hints (hints off / on)
+source\ccos-easy.sh rd adf rn cpf rmt op jusb space net whereami
 source\splash.c     the shutdown / restart screen
 source\desktop.c    the desktop: taskbar, start menu, windows and all the apps
 source\ccos-shutdown.sh  shutdown / restart / boot-into-shell screen and logic
@@ -487,6 +488,12 @@ Shell commands: poweroff, reboot (show the shutdown screen)
   lsusb                 your USB sticks, numbered usb1, usb2... (lsusb -a: every USB device)
   cdusb usb1            go into that stick: mkf, cp, nano... now work on it
   xusb                  leave the stick again
+  rd hi.txt             read a file              op hi.txt   open it in its app
+  adf hi.txt : more     add text to the end      rn a.txt : b.txt   rename
+  cpf hi.txt : usb1     copy (to usb1, D:, a folder, or a new name)
+  rmt hi.txt            into the Recycle Bin (on a USB stick: deleted for good, after asking)
+  jusb usb1             eject a USB stick safely
+  space / net / whereami   free space / is the internet working? / where am I?
   hints off / hints on  the grey "(the usual Linux way: ...)" line these easy
                         commands print, so you learn the real commands too
 Closing the QEMU window = pulling the plug (no shutdown screen)

@@ -15,13 +15,15 @@ alias grep='grep --color=auto'
 alias ..='cd ..' ...='cd ../..'
 alias py=python3 python=python3 pip='python3 -m pip' pip3='python3 -m pip'
 alias D:='cd /data' d:='cd /data'
-# mkf NAME : TEXT  - the text is taken from the line exactly as typed, so ' * ; & and friends are fine
-alias mkf='_ccos_mkf #'
-_ccos_mkf() {
-    local l re='(^|[;&|(][[:space:]]*)mkf([[:space:]](.*))?$'
+# the easy commands (mkf rd adf rn cpf rmt op) get the line exactly as typed, so names with spaces
+# and text with ' * ; & and friends are fine: "rd my list.txt", "mkf a.txt : it's 5 * 3"
+_ccos_raw() {
+    local c=$1 l re="(^|[;&|(][[:space:]]*)$1([[:space:]](.*))?\$"
     l=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')
-    if [[ $l =~ $re ]]; then /usr/bin/mkf --raw "${BASH_REMATCH[3]}"; else /usr/bin/mkf; fi
+    local a=""; [[ $l =~ $re ]] && a=${BASH_REMATCH[3]}
+    if [ "$c" = mkf ]; then /usr/bin/mkf --raw "$a"; else /usr/bin/ccos-easy "$c" --raw "$a"; fi
 }
+for _c in mkf rd adf rn cpf rmt op; do alias $_c="_ccos_raw $_c #"; done; unset _c
 # USB sticks:  lsusb (the list: usb1, usb2...)   cdusb usb1 (go into one)   xusb (leave it)
 lsusb() { if [ $# -gt 0 ]; then [ "$1" = -a ] && shift; command lsusb "$@"; else /usr/bin/ccos-usb list; fi; }
 cdusb() {
@@ -33,6 +35,13 @@ cdusb() {
     export CCOS_USB=$n CCOS_USB_DIR=$d CCOS_USB_NAME=$name
     printf '\e[1;32m✔\e[0m You'"'"'re in %s (%s). Files you make now go on that stick. xusb leaves it.\n' "$n" "$name"
     /usr/bin/ccos-hint "cd $(printf '%q' "$d")"
+}
+jusb() {     # eject: leave the stick first if we're in it
+    local r d
+    r=$(/usr/bin/ccos-usb find "$1") || return 1
+    d=$(printf '%s' "$r" | cut -f2)
+    case "$PWD/" in "$d"/*) cd "${CCOS_USB_BACK:-$HOME}" 2>/dev/null || cd ~; unset CCOS_USB CCOS_USB_DIR CCOS_USB_NAME CCOS_USB_BACK ;; esac
+    /usr/bin/ccos-easy jusb "$1"
 }
 xusb() {
     if [ -z "$CCOS_USB" ]; then echo "You're not in a USB stick. (cdusb usb1 goes into one.)"; return 0; fi
@@ -67,25 +76,31 @@ _ccos_cdusb_tab() { COMPREPLY=($(compgen -W "$(/usr/bin/ccos-usb names)" -- "${C
 export LS_COLORS='di=1;34:ln=1;36:ex=1;32:*.py=0;33:*.zip=1;31:*.7z=1;31:*.rar=1;31:*.gz=1;31:*.jpg=1;35:*.png=1;35:*.mp4=1;35:*.mp3=0;36:*.pdf=0;31'
 # Tab completion for commands' options (and folders, files...)
 [ -f /usr/share/bash-completion/bash_completion ] && . /usr/share/bash-completion/bash_completion
-complete -F _ccos_cdusb_tab cdusb
+complete -F _ccos_cdusb_tab cdusb jusb
 
 help() {
-    if [ -n "$1" ]; then builtin help "$@" 2>/dev/null || man "$1" 2>/dev/null || "$1" --help 2>&1 | less -FX; return; fi
+    if [ -n "$1" ]; then builtin help "$@" 2>/dev/null || man "$1" 2>/dev/null || "$1" --help 2>&1 | less -F; return; fi
     local c=$'\e[1;36m' b=$'\e[1m' n=$'\e[0m'
     cat <<HELP
 ${c}ccos Terminal${n} - useful commands   (help COMMAND tells more about one)
+
+${b}Easy commands${n}  (each shows the usual Linux way in grey; hints off hides that)
+  mkf hi.txt : hello!     make a file (\\n in the text starts a new line)
+  rd hi.txt               read a file             op hi.txt      open it in its app
+  adf hi.txt : more       add to the end          rn a.txt : b.txt   rename
+  cpf hi.txt : usb1       copy (to usb1, D:, a folder or a new name)
+  rmt hi.txt              into the Recycle Bin    whereami       where am I?
+  lsusb                   your USB sticks         cdusb usb1 / xusb   go into one / leave
+  jusb usb1               eject a stick safely
+  space                   free space              net            is the internet working?
 
 ${b}Files${n}
   ls / ll           list files (ll: with sizes and dates)
   cd FOLDER         go into a folder (cd .. goes up, D: goes to your D: drive)
   cp A B / mv A B   copy / move or rename          rm FILE   delete (no Recycle Bin!)
   mkdir NAME        make a folder                  tree      folders as a tree
-  mkf hi.txt        make a file (mkf hi.txt : hello!  puts "hello!" in it)
-                    (\\n in the text starts a new line: mkf a.txt : hi \\n there)
   nano FILE         edit a text file (Ctrl+S saves, Ctrl+X quits)
   cat / less FILE   show / read a file (q quits)   find . -name '*.txt'   find files
-  lsusb             your USB sticks (usb1, usb2...)  cdusb usb1   go into one   xusb   leave it
-  hints off / on    the grey "usual Linux way" lines under mkf, lsusb, cdusb, xusb
   zip -r a.zip DIR  zip a folder    unzip a.zip    7z x FILE   unpack .7z .rar ...
 
 ${b}System${n}
