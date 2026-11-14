@@ -1,6 +1,6 @@
 ccos is built from these open-source projects:
 
-  Linux kernel 6.12     GPL-2.0          https://kernel.org
+  Linux kernel 6.18     GPL-2.0          https://kernel.org
                         (includes Intel's iwlwifi Wi-Fi driver)
   BusyBox 1.36.1        GPL-2.0          https://busybox.net
   wpa_supplicant 2.10   BSD-3-Clause     https://w1.fi  (Wi-Fi security, from Ubuntu's package)

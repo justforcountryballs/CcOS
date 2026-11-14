@@ -1,4 +1,4 @@
-ccos - Linux 6.12 kernel + BusyBox 1.36.1 + ccos desktop
+ccos - Linux 6.18 kernel + BusyBox 1.36.1 + ccos desktop
 
 bzImage             the compiled Linux kernel
 initramfs.cpio.gz   the root filesystem (BusyBox, init, desktop)
@@ -134,6 +134,8 @@ Desktop controls:
   Windows + .  (or Windows + ;)      emoji: search by name or pick a group, click
                                      to type it into the app you're in (Firefox,
                                      Discord...). Recently used ones come first.
+  If Linux itself ever crashes        a purple "KERNEL PANIC!" screen with Tux and
+                                     the reason. Hold the power button to restart.
   Windows + P                        a second screen (HDMI, DisplayPort, USB-C):
                                      PC screen only / Duplicate / Extend /
                                      Second screen only. ccos remembers it and

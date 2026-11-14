@@ -12,6 +12,7 @@
  * Build: gcc -O2 -static -o splash splash.c -lm
  */
 #include <stdio.h>
+#include <sys/utsname.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -209,7 +210,8 @@ static void layout(void) {
 static void draw_static(void) {
     for (int i = 0; i < W * H; i++) back[i] = BG;
     draw_logo(W / 2, banner_y + LOGO_R, LOGO_R);
-    const char *sub = "Linux 6.12 + BusyBox";
+    char sub[64] = "Linux + BusyBox";                     /* the real kernel version (e.g. Linux 6.18) */
+    { struct utsname u; int ma, mi; if (uname(&u) == 0 && sscanf(u.release, "%d.%d", &ma, &mi) == 2) snprintf(sub, sizeof sub, "Linux %d.%d + BusyBox", ma, mi); }
     draw_text((W - 8 * (int)strlen(sub)) / 2, banner_y + 2 * LOGO_R + 22, sub, DIM, 1);
 }
 
