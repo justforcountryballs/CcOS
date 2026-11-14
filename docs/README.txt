@@ -11,8 +11,8 @@ source\ccos-savedisk.sh  finds the save disk (QEMU disk, or the stick's ccos-sto
 source\make_usbimg.sh  builds ccos-usb.img (the USB stick version)
 source\mkpart.c    makes the stick's second part for your files and apps
 source\kernel.config  the Linux kernel settings ccos is built with
-source\init.sh      /init, the first program the kernel runs (boot steps)
-source\splash.c     the loading screen: banner, spinning dots, progress bar
+source\init.sh      /init, the first program the kernel runs (boot steps, [  OK  ] lines)
+source\splash.c     the shutdown / restart screen
 source\desktop.c    the desktop: taskbar, start menu, windows and all the apps
 source\ccos-shutdown.sh  shutdown / restart / boot-into-shell screen and logic
 source\ccos-network.sh   starts cable + Wi-Fi networking at boot

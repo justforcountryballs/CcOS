@@ -27,6 +27,7 @@ mount -t tmpfs -o mode=1777 none /dev/shm
 dmesg -n 1                      # silence kernel messages on the screen
 
 E=$(printf '\033')
+SH=/bin/sh; [ -x /bin/bash ] && SH=/bin/bash     # the command line: bash (Tab, history, help)
 
 # ---- the save disk, mounted early so we can read boot requests --------
 mkdir -p /data
@@ -44,97 +45,59 @@ if [ -f /data/.boot-to-shell ]; then
     [ -x /etc/rc.local ] && /etc/rc.local
     /sbin/ccos-network &
     printf '%s[0m%s[2J%s[H%s[?25h' "$E" "$E" "$E" "$E"
-    exec setsid cttyhack /bin/sh -l
+    exec setsid cttyhack $SH -l
 fi
 
-# ---- graphical splash (banner + spinning dots + progress bar) ---------
-if [ -e /dev/fb0 ] && [ -x /bin/splash ]; then
-    mkfifo /splash.fifo
-    /bin/splash < /splash.fifo &
-    SPLASH=$!
-    exec 3> /splash.fifo
-    progress() { echo "$1 $2" >&3; }
-
-# ---- fallback: text-mode splash (no graphics available) ----------------
-else
-    set -- $(stty size 2>/dev/null)
-    ROWS=${1:-25}; COLS=${2:-80}
-    [ "$ROWS" -gt 0 ] 2>/dev/null || ROWS=25
-    [ "$COLS" -gt 0 ] 2>/dev/null || COLS=80
-    at()     { printf '%s[%d;%dH' "$E" "$1" "$2"; }
-    center() { printf '%s' "$(( (COLS - $1) / 2 + 1 ))"; }
-    BAR_W=40
-    TOP=$(( (ROWS - 12) / 2 )); [ "$TOP" -lt 1 ] && TOP=1
-    BAR_ROW=$(( TOP + 8 ))
-    BAR_COL=$(center $(( BAR_W + 2 )))
-    printf '%s[?25l%s[2J%s[1;36m' "$E" "$E" "$E"
-    c=$(center 20); r=$TOP
-    for line in '  ___ ___ ___  ___ ' ' / __/ __/ _ \/ __|' '| (_| (_| (_) \__ \' ' \___\___\___/|___/'; do
-        at $r $c; printf '%s' "$line"; r=$(( r + 1 ))
-    done
-    printf '%s[0;37m' "$E"; at $(( TOP + 5 )) $(center 22); printf 'Linux 6.12 + BusyBox%s[0m' "$E"
-    at $BAR_ROW $BAR_COL; printf '['; at $BAR_ROW $(( BAR_COL + BAR_W + 1 )); printf ']'
-    progress() {
-        filled=$(( $1 * BAR_W / 100 ))
-        at $BAR_ROW $(( BAR_COL + 1 ))
-        printf '%s[46m%*s%s[0m%*s' "$E" "$filled" '' "$E" $(( BAR_W - filled )) ''
-        at $BAR_ROW $(( BAR_COL + BAR_W + 3 )); printf '%3d%%' "$1"
-        at $(( BAR_ROW + 2 )) 1; printf '%s[2K' "$E"
-        at $(( BAR_ROW + 2 )) $(center ${#2}); printf '%s[2m%s%s[0m' "$E" "$2" "$E"
-    }
-fi
-
-# ---- boot sequence --------------------------------------------------
-progress 5  "Starting ccos...";                 usleep 600000
-progress 20 "Mounting /sys";                    mount -t sysfs none /sys;        usleep 500000
-progress 30 "Mounting /tmp";                    mount -t tmpfs none /tmp;        usleep 400000
+# ---- the boot messages:  [  OK  ] Did something  /  [ FAIL ] Something --------
+# (like most Linux systems; no picture, just what's happening)
+mount -t sysfs none /sys
+W=$(cut -d, -f1 /sys/class/graphics/fb0/virtual_size 2>/dev/null)          # a bigger font on big screens
+if [ "${W:-0}" -ge 2560 ]; then setfont /usr/share/consolefonts/TerminusBold32x16.psf 2>/dev/null
+elif [ "${W:-0}" -ge 1600 ]; then setfont /usr/share/consolefonts/TerminusBold24x12.psf 2>/dev/null; fi
+printf '%s[0m%s[2J%s[H%s[?25l' "$E" "$E" "$E" "$E"           # clear the screen, hide the cursor
+G="$E[1;32m"; R="$E[1;31m"; Y="$E[1;33m"; C="$E[1;36m"; N="$E[0m"
+ok()   { printf '[  %sOK%s  ] %s\n' "$G" "$N" "$1"; }
+fail() { printf '[ %sFAIL%s ] %s\n' "$R" "$N" "$1"; FAILED=1; }
+warn() { printf '[ %sWAIT%s ] %s\n' "$Y" "$N" "$1"; }
+step() { m=$1; shift; if "$@" >/dev/null 2>&1; then ok "$m"; else fail "$m"; fi; }   # run it, say how it went
+printf '\n%sccos%s %s (Linux %s)\n\n' "$C" "$N" "$(cat /etc/ccos-version 2>/dev/null)" "$(uname -r)"
+ok "Mounted /proc and /dev"
+ok "Mounted /sys"
+step "Mounted /tmp" mount -t tmpfs none /tmp
 
 # the save disk holds settings: ccos-data.img in the ccos folder (QEMU),
 # or ccos/ccos-data.img on the USB stick (real computer)
 if grep -q 'ccos.live' /proc/cmdline; then
-    progress 45 "Looking for the ccos USB stick"
-else
-    progress 45 "Mounting save disk"
-fi
-/sbin/ccos-savedisk
-if grep -q 'ccos.live' /proc/cmdline; then
+    if /sbin/ccos-savedisk; then ok "Found the ccos USB stick (your files and apps)"
+    else warn "Looking for the ccos USB stick (still looking...)"; fi
     /sbin/ccos-savedisk --watch &       # not found yet, or pulled out later: keep looking
+else
+    if /sbin/ccos-savedisk; then ok "Mounted the save disk"; else fail "Mounted the save disk (nothing will be saved)"; fi
 fi
-usleep 300000
 
-# "Boot Into Shell" when running from the USB stick (its save file is only
-# found now, after the splash started)
+# "Boot Into Shell" when running from the USB stick (its save file is only found now)
 if [ -f /data/.boot-to-shell ]; then
     rm -f /data/.boot-to-shell; sync
-    if [ -n "$SPLASH" ]; then echo quit >&3; wait $SPLASH; exec 3>&-; rm -f /splash.fifo; fi
-    [ -x /bin/splash ] && /bin/splash --text
     hostname ccos
     [ -x /etc/rc.local ] && /etc/rc.local
-    /sbin/ccos-network &
-    printf '%s[0m%s[2J%s[H%s[?25h' "$E" "$E" "$E" "$E"
-    exec setsid cttyhack /bin/sh -l
+    /sbin/ccos-network >/dev/null 2>&1 &
+    ok "Booting into the shell"
+    printf '%s[?25h\n' "$E"
+    exec setsid cttyhack $SH -l
 fi
-progress 55 "Preparing the apps disk";          /sbin/ccos-apps
-progress 58 "Starting sound";                  /sbin/ccos-sound
-progress 60 "Setting hostname";                 hostname ccos;                   usleep 500000
-# your own startup commands, if you add an /etc/rc.local script
-[ -x /etc/rc.local ] && /etc/rc.local
-progress 80 "Connecting to the network"
-/sbin/ccos-network &                 # cable + Wi-Fi, in the background so boot isn't held up
-usleep 500000
-progress 95 "Starting desktop";                                                  usleep 500000
-progress 100 "Welcome to ccos!";                                                 usleep 800000
-
-# ---- stop the splash ------------------------------------------------
-if [ -n "$SPLASH" ]; then
-    echo quit >&3
-    wait $SPLASH
-    exec 3>&-
-    rm -f /splash.fifo
-fi
+step "Prepared the apps disk"            /sbin/ccos-apps
+step "Started sound"                     /sbin/ccos-sound
+step "Set the computer's name (ccos)"    hostname ccos
+if [ -x /etc/rc.local ]; then step "Ran your startup commands (/etc/rc.local)" /etc/rc.local; fi
+/sbin/ccos-network >/dev/null 2>&1 &     # cable + Wi-Fi, in the background so boot isn't held up
+ok "Started the network (it connects in the background)"
+if [ -e /dev/fb0 ] && [ -x /bin/desktop ]; then ok "Starting the desktop"; else fail "Starting the desktop (no screen, or it's missing)"; fi
+COLS=$(stty size 2>/dev/null | cut -d' ' -f2); [ "${COLS:-0}" -gt 20 ] 2>/dev/null || COLS=80
+printf '\n%*s%sWelcome to CcOS!%s\n' $(( (COLS - 16) / 2 )) '' "$C" "$N"
+usleep 900000
 
 # ---- start the desktop (Ctrl+Alt+Backspace quits to the shell) -------
-RC=0
+RC=1
 if [ -e /dev/fb0 ] && [ -x /bin/desktop ]; then
     /bin/desktop
     RC=$?
@@ -145,12 +108,22 @@ fi
 # so the desktop exits with code 42 and we go straight to a plain shell
 if [ "$RC" = 42 ]; then
     printf '%s[0m%s[2J%s[H%s[?25h' "$E" "$E" "$E" "$E"
-    exec setsid cttyhack /bin/sh -l
+    exec setsid cttyhack $SH -l
 fi
 
-# ---- hand over to the shell -----------------------------------------
+# ---- the desktop didn't start, or crashed: stay here, with a command line ----
+if [ "$RC" != 0 ]; then
+    printf '%s[0m%s[?25h\n' "$E" "$E"
+    fail "The desktop stopped (error $RC)"
+    [ -s /tmp/ccos-crash.txt ] && echo "         What happened is in /tmp/ccos-crash.txt  (cat /tmp/ccos-crash.txt)"
+    echo "         Type 'desktop' to try again, 'help' for commands, 'reboot' to restart."
+    echo
+    CCOS_NO_MOTD=1 exec setsid cttyhack $SH -l
+fi
+
+# ---- you quit the desktop (Ctrl+Alt+Backspace): the shell ------------
 printf '%s[0m%s[2J%s[H%s[?25h' "$E" "$E" "$E" "$E"   # reset, clear, show cursor
-cat /etc/motd
+[ "$SH" = /bin/sh ] && cat /etc/motd                  # (bash shows it itself)
 echo " Type 'desktop' to go back to the desktop."
 echo
-exec setsid cttyhack /bin/sh -l
+exec setsid cttyhack $SH -l
