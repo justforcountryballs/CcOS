@@ -3161,6 +3161,7 @@ static void toast_clicked(int i) {           /* tell the app; bring its window f
         for (int w = 0; w < MAXWIN; w++) if (wins[w].open && !strcmp(wins[w].cmd, cmd)) { restore_win(w); return; }
     }
 }
+static void bin_poked(void);
 static void toast_line(char *l) {
     if (l[0] == 'N' && l[1] == ' ') {            /* N id<TAB>app<TAB>title<TAB>body */
         char *f[4] = { l + 2, NULL, NULL, NULL };
@@ -3185,6 +3186,8 @@ static void toast_line(char *l) {
         }
     } else if (l[0] == 'O' && l[1] == ' ') {     /* xdg-open: open a file with a ccos app */
         open_file(l + 2);
+    } else if (l[0] == 'B') {                    /* the Terminal's rmt put something in the Recycle Bin */
+        bin_poked();
     }
 }
 static void toast_read(void) {
@@ -6698,6 +6701,10 @@ static void pretty_path(const char *p, char *out, size_t n) {
     if (!strncmp(p, dl, dn) && (p[dn] == '/' || !p[dn])) snprintf(out, n, "Downloads%s", p + dn);
     else if (!strncmp(p, "/data", 5) && (p[5] == '/' || !p[5])) snprintf(out, n, "D:%s", p[5] ? p + 5 : "/");
     else snprintf(out, n, "%s", p);
+}
+static void bin_poked(void) {
+    desk_bin_changed();
+    if (win_of(explorer_draw) >= 0) { ex_sig = ex_read(); repaint_client(explorer_draw); }
 }
 static void ex_bin_restore(int all) {
     int done = 0, bad = 0; char last[1100] = "";

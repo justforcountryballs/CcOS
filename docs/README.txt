@@ -11,8 +11,12 @@ source\ccos-savedisk.sh  finds the save disk (QEMU disk, or the stick's ccos-sto
 source\make_usbimg.sh  builds ccos-usb.img (the USB stick version)
 source\mkpart.c    makes the stick's second part for your files and apps
 source\kernel.config  the Linux kernel settings ccos is built with
-source\init.sh      /init, the first program the kernel runs (boot steps)
-source\splash.c     the loading screen: banner, spinning dots, progress bar
+source\init.sh      /init, the first program the kernel runs (boot steps, [  OK  ] lines)
+source\mkf.sh       the mkf command (make a file the easy way)
+source\ccos-usb.sh  lsusb / cdusb / xusb: USB sticks in the Terminal
+source\ccos-hint.sh the "usual Linux way" hints (hints off / on)
+source\ccos-easy.sh rd adf rn cpf rmt op jusb space net whereami
+source\splash.c     the shutdown / restart screen
 source\desktop.c    the desktop: taskbar, start menu, windows and all the apps
 source\ccos-shutdown.sh  shutdown / restart / boot-into-shell screen and logic
 source\ccos-network.sh   starts cable + Wi-Fi networking at boot
@@ -478,6 +482,20 @@ Updates (Settings > Update):
   version to them once with Rufus; from then on, updates come by themselves.
 
 Shell commands: poweroff, reboot (show the shutdown screen)
+  mkf hi.txt : hello!   makes hi.txt with "hello!" inside (mkf hi.txt = empty file;
+                        from the home folder it goes into Documents)
+                        \n in the text starts a new line: mkf a.txt : he \n llo
+  lsusb                 your USB sticks, numbered usb1, usb2... (lsusb -a: every USB device)
+  cdusb usb1            go into that stick: mkf, cp, nano... now work on it
+  xusb                  leave the stick again
+  rd hi.txt             read a file              op hi.txt   open it in its app
+  adf hi.txt : more     add text to the end      rn a.txt : b.txt   rename
+  cpf hi.txt : usb1     copy (to usb1, D:, a folder, or a new name)
+  rmt hi.txt            into the Recycle Bin (on a USB stick: deleted for good, after asking)
+  jusb usb1             eject a USB stick safely
+  space / net / whereami   free space / is the internet working? / where am I?
+  hints off / hints on  the grey "(the usual Linux way: ...)" line these easy
+                        commands print, so you learn the real commands too
 Closing the QEMU window = pulling the plug (no shutdown screen)
 
 Adding things to the start menu: edit left_items / right_items near the

@@ -73,7 +73,10 @@ ccos is built from these open-source projects:
     curl 8.5 (libcurl)  curl licence (MIT-like)   zip 3.0  Info-ZIP licence
     7-Zip 23.01 (7zip)  LGPL-2.1 + unRAR restriction    lm-sensors 3.6  GPL-2.0 / LGPL-2.1
     OpenSSH 9.6 client  BSD               ncurses terminfo  MIT-like
+    lsblk (util-linux 2.39)  GPL-2.0
   Python 3.12 (+ pip 24.0, Tcl/Tk 8.6 for tkinter)  PSF License / MIT / Tcl licence
+  Terminus Font (bold 12x24, 16x32 console fonts)  OFL-1.1  https://terminus-font.sourceforge.net
+                          (the boot messages' big text, from Ubuntu console-setup; licence: OFL-1.1-LICENSE.txt)
 
 Everything else (the desktop, apps, splash and sounds) was written for ccos.
 
