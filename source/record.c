@@ -129,7 +129,7 @@ static void rec_tick(void) {
     for (int i = 0; i < REC_NSLOT; i++) if (!rec.busy[i]) { s = i; break; }
     if (s < 0) return;                                                          /* the encoder is behind: skip */
     uint32_t *d = rec.shm + (size_t)s * rec.w * rec.h;
-    memcpy(d, back, (size_t)rec.w * rec.h * 4);
+    for (int y = 0; y < rec.h; y++) memcpy(d + (size_t)y * rec.w, back + (size_t)y * BW, (size_t)rec.w * 4);   /* (the main screen) */
     if (cur_shape != CUR_HIDDEN && cur_size >= 0) { rec_put_dst = d; render_cursor(cur_shape, cur_col, cursor_scales[cur_size], mx, my, rec_put); }
     char l[48]; int n = snprintf(l, sizeof l, "F %d %lld\n", s, now - rec.start);
     if (write(rec.to, l, (size_t)n) == n) rec.busy[s] = 1;
