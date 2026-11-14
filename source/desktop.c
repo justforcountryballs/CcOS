@@ -66,7 +66,7 @@
 
 /* ---- icons ---------------------------------------------------------- */
 enum { ICON_NONE, ICON_GEAR, ICON_CALC, ICON_NOTE, ICON_MINE, ICON_FOLDER, ICON_FILE, ICON_DRIVE, ICON_COMPUTER, ICON_GLOBE, ICON_TERMINAL, ICON_APP, ICON_CARDS, ICON_BAG, ICON_PHOTO, ICON_VIDEO, ICON_MUSIC,
-       ICON_FOLDER_IMG, ICON_FOLDER_DL, ICON_FOLDER_VID, ICON_USB, ICON_BATTERY, ICON_MOON, ICON_SUN, ICON_PRINTER, ICON_ZIP, ICON_BIN, ICON_BIN_FULL, ICON_CAMERA, ICON_RECORD, ICON_SEARCH, ICON_PAINT, ICON_CALENDAR, ICON_SYSMON, ICON_THEMES, ICON_CLOCKAPP, ICON_PDF, ICON_GAMEPAD };   /* coloured folders: Images, Downloads, Videos */
+       ICON_FOLDER_IMG, ICON_FOLDER_DL, ICON_FOLDER_VID, ICON_USB, ICON_BATTERY, ICON_MOON, ICON_SUN, ICON_PRINTER, ICON_ZIP, ICON_BIN, ICON_BIN_FULL, ICON_CAMERA, ICON_RECORD, ICON_SEARCH, ICON_PAINT, ICON_CALENDAR, ICON_SYSMON, ICON_THEMES, ICON_CLOCKAPP, ICON_PDF, ICON_GAMEPAD, ICON_PYTHON };   /* coloured folders: Images, Downloads, Videos */
 #define ICON_IMG 1000              /* ICON_IMG + n: an app's own picture (Flathub apps) */
 
 /* ===================================================================
@@ -96,6 +96,7 @@ static MenuItem left_items[NBUILTIN + FP_MENU + 1] = {   /* white panel (program
     { "Calendar", "@calendar", ICON_CALENDAR },
     { "Clock", "@clock", ICON_CLOCKAPP },
     { "Game controllers", "@gamepad", ICON_GAMEPAD },
+    { "Python", "@python", ICON_PYTHON },
     { "System Monitor", "@sysmon", ICON_SYSMON },
     { "Themes", "@themes", ICON_THEMES },
     { "Software Manager", "@store", ICON_BAG },
@@ -223,7 +224,7 @@ static const AppInfo apps[] = {
     { "@store", "Software Manager", ICON_BAG },
     { "@photos", "Photos", ICON_PHOTO }, { "@videos", "Videos", ICON_VIDEO }, { "@music", "Music", ICON_MUSIC },
     { "@camera", "Camera", ICON_CAMERA }, { "@record", "Record", ICON_RECORD },
-    { "@paint", "Paint", ICON_PAINT }, { "@calendar", "Calendar", ICON_CALENDAR }, { "@clock", "Clock", ICON_CLOCKAPP }, { "@gamepad", "Game controllers", ICON_GAMEPAD }, { "@sysmon", "System Monitor", ICON_SYSMON }, { "@themes", "Themes", ICON_THEMES },
+    { "@paint", "Paint", ICON_PAINT }, { "@calendar", "Calendar", ICON_CALENDAR }, { "@clock", "Clock", ICON_CLOCKAPP }, { "@gamepad", "Game controllers", ICON_GAMEPAD }, { "@python", "Python", ICON_PYTHON }, { "@sysmon", "System Monitor", ICON_SYSMON }, { "@themes", "Themes", ICON_THEMES },
 };
 /* ---- apps installed with Flatpak (from Flathub) -------------------
  * Flatpak puts a .desktop file for each one in its "exports" folder;
@@ -531,6 +532,20 @@ static void fill_round(int x, int y, int w, int h, int r, uint32_t c, int a) {
             float cov = round_cov(i, j, x, y, w, h, r);
             if (cov > 0) blend(i, j, c, (int)(a * cov));
         }
+}
+
+/* the same, but only outside the rectangle ix,iy,iw,ih (a window's shadow: the window covers the rest) */
+static void fill_round_outside(int x, int y, int w, int h, int r, uint32_t c, int a, int ix, int iy, int iw, int ih) {
+    int x0 = x, y0 = y, x1 = x + w, y1 = y + h;
+    if (!clip_range(&x0, &y0, &x1, &y1)) return;
+    for (int j = y0; j < y1; j++) {
+        int inside = j >= iy && j < iy + ih;
+        for (int i = x0; i < x1; i++) {
+            if (inside && i >= ix && i < ix + iw) { i = ix + iw - 1; continue; }
+            float cov = round_cov(i, j, x, y, w, h, r);
+            if (cov > 0) blend(i, j, c, (int)(a * cov));
+        }
+    }
 }
 
 /* vertical gradient inside a rounded rectangle */
@@ -1101,6 +1116,7 @@ static void draw_calendar_icon(int cx, int cy, int r);
 static void draw_clockapp_icon(int cx, int cy, int r);
 static void draw_pdf_icon(int cx, int cy, int r);
 static void draw_gamepad_icon(int cx, int cy, int r);
+static void draw_python_icon(int cx, int cy, int r);
 static void draw_sysmon_icon(int cx, int cy, int r);
 static void draw_themes_icon(int cx, int cy, int r);
 static void draw_icon_raw(int icon, int cx, int cy, int r) {
@@ -1111,6 +1127,7 @@ static void draw_icon_raw(int icon, int cx, int cy, int r) {
     else if (icon == ICON_CLOCKAPP) draw_clockapp_icon(cx, cy, r);
     else if (icon == ICON_PDF) draw_pdf_icon(cx, cy, r);
     else if (icon == ICON_GAMEPAD) draw_gamepad_icon(cx, cy, r);
+    else if (icon == ICON_PYTHON) draw_python_icon(cx, cy, r);
     else if (icon == ICON_SYSMON) draw_sysmon_icon(cx, cy, r);
     else if (icon == ICON_BIN || icon == ICON_BIN_FULL) draw_bin_icon(cx, cy, r, icon == ICON_BIN_FULL);
     else if (icon == ICON_CAMERA) draw_camera_icon(cx, cy, r);
@@ -2781,7 +2798,7 @@ static void draw_window(int idx) {
         const Theme *T = TH();
         if (!w->fullscreen) {
             for (int k = 1; k <= 4; k++)                       /* a soft shadow */
-                fill_round(w->x - k + 2, w->y - k + 4, w->w + 2 * k - 4, w->h + 2 * k - 4, 6 + k, RGB(0, 0, 0), act ? 16 : 9);
+                fill_round_outside(w->x - k + 2, w->y - k + 4, w->w + 2 * k - 4, w->h + 2 * k - 4, 6 + k, RGB(0, 0, 0), act ? 16 : 9, w->x, w->y, w->w, w->h);
             glass_fill(w->x, w->y, w->w, w->h, 0, act ? T->title : T->title_in, cx, cy, cw, ch);
             stroke_round(w->x, w->y, w->w, w->h, 1, act ? T->border : T->border_in, 255);
         }
@@ -5848,10 +5865,13 @@ static int ex_is_text(const char *path, long long size) {
 static int ex_is_zip(const char *name);
 static int ex_is_archive(const char *name);
 static int is_pdf(const char *name);
+static void pyapp_open_file(const char *path);
+static int is_py(const char *name) { const char *e = strrchr(name, '.'); return e && !strcasecmp(e, ".py"); }
 static void pdfview_open(const char *path);
 static const char *ex_type(const ExItem *it) {
     if (!it->dir && ex_is_zip(it->name)) return "Zip archive";
     if (!it->dir && is_pdf(it->name)) return "PDF document";
+    if (!it->dir && is_py(it->name)) return "Python program";
     if (!it->dir && ex_is_archive(it->name)) return "Archive";
     if (!it->dir && is_launcher(it->name)) return "Application";
     if (!it->dir && is_ccupd(it->name)) return "ccos Update";
@@ -6576,6 +6596,7 @@ static void ex_open_item(int i) {
     if (is_launcher(it->name)) { launcher_run(p); return; }     /* Downloads > Flathub > an app */
     if (is_ccupd(it->name)) { up_install_file(p); return; }     /* a ccos update file */
     if (is_pdf(it->name)) { pdfview_open(p); return; }
+    if (is_py(it->name)) { pyapp_open_file(p); return; }
     const char *app = media_app_for(it->name);
     if (app) { char c[600]; snprintf(c, sizeof c, "%s %s", app, p); run(c); return; }
     if (!ex_is_text(p, it->size)) { ex_info("ccos doesn't have an app that", "can open this file yet."); return; }
@@ -6592,6 +6613,7 @@ static void open_file(const char *path) {
     if (is_launcher(path)) { launcher_run(path); return; }
     if (is_ccupd(path)) { up_install_file(path); return; }
     if (is_pdf(path)) { pdfview_open(path); return; }
+    if (is_py(path)) { pyapp_open_file(path); return; }
     if (ex_is_archive(path)) { struct stat as; if (stat(path, &as) == 0 && S_ISREG(as.st_mode)) { ex_extract(path); return; } }
     { struct stat ds; if (stat(path, &ds) == 0 && S_ISDIR(ds.st_mode)) { run("@explorer"); ex_go(path, 1); return; } }
     const char *app = media_app_for(path);
@@ -7221,6 +7243,8 @@ static void paint_open(const char *path);
 static void calendar_open(void);
 static void clockapp_open(void);
 static void gamepad_open(void);
+static void pyapp_open(void);
+static void pyapp_open_file(const char *path);
 static void sysmon_open(void);
 static void themes_open(void);
 static void run(const char *cmd) {
@@ -7254,6 +7278,7 @@ static void run(const char *cmd) {
         if (!strcmp(cmd, "@calendar")) { calendar_open(); return; }
         if (!strcmp(cmd, "@clock")) { clockapp_open(); return; }
         if (!strcmp(cmd, "@gamepad")) { gamepad_open(); return; }
+        if (!strcmp(cmd, "@python")) { pyapp_open(); return; }
         if (!strcmp(cmd, "@sysmon")) { sysmon_open(); return; }
         if (!strcmp(cmd, "@themes")) { themes_open(); return; }
         if (!strcmp(cmd, "@record")) {
@@ -7887,6 +7912,7 @@ static int qs_open_(void) { return qs.open; }
 #include "clockapp.c"             /* Clock: alarms, timer, stopwatch, world clock */
 #include "pdfview.c"              /* PDF viewer (pages drawn by ccos-pdf) */
 #include "gamepad.c"              /* Game controllers: which are connected, a live test */
+#include "pyapp.c"                /* Python: write and run Python code */
 #include "sysmon.c"               /* System Monitor */
 #include "themes.c"               /* Themes: the brush */
 #include "screenshot.c"           /* Print Screen and Win+Shift+S */

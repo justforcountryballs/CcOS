@@ -23,6 +23,14 @@ static void wd_cat(FILE *o, const char *name) {
     while (fgets(l, sizeof l, f) && n++ < 24) fprintf(o, "    %s%s", l, strchr(l, '\n') ? "" : "\n");
     fclose(f);
 }
+/* a busy (not waiting) desktop: ask the main thread itself where it is */
+#include <execinfo.h>
+static void wd_where_handler(int sig) {
+    (void)sig;
+    void *bt[40]; int n = backtrace(bt, 40);
+    int fd = open("/tmp/ccos-freeze.log", O_WRONLY | O_APPEND | O_CREAT, 0644);
+    if (fd >= 0) { if (write(fd, "  where (desktop):\n", 19) < 0) {} backtrace_symbols_fd(bt, n, fd); close(fd); }
+}
 static void *wd_thread(void *arg) {
     (void)arg;
     long long seen = 0;                          /* the stall already written down */
@@ -38,6 +46,8 @@ static void *wd_thread(void *arg) {
             fprintf(o, "  wchan: "); wd_cat(o, "wchan"); fprintf(o, "\n  syscall: "); wd_cat(o, "syscall");
             fprintf(o, "  kernel stack:\n"); wd_cat(o, "stack");
             fclose(o);
+            syscall(SYS_tgkill, getpid(), wd_tid, SIGUSR2);          /* (adds "where" below) */
+            usleep(100000);
             while (__atomic_load_n(&wd_since, __ATOMIC_ACQUIRE) == s) usleep(50000);
             o = fopen("/tmp/ccos-freeze.log", "a");
             if (o) { fprintf(o, "  ...it lasted %lld ms\n\n", wd_now() - s); fclose(o); }
@@ -56,6 +66,7 @@ static void *wd_thread(void *arg) {
 }
 static void wd_start(void) {
     wd_tid = (pid_t)syscall(SYS_gettid);
+    signal(SIGUSR2, wd_where_handler);
     pthread_t th; pthread_attr_t at; pthread_attr_init(&at);
     pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
     pthread_create(&th, &at, wd_thread, NULL);

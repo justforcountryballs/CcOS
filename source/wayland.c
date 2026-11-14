@@ -1696,7 +1696,7 @@ static void app_env(void) {
     const char *home = access("/apps/home", W_OK) == 0 ? "/apps/home" : access("/data/home", W_OK) == 0 ? "/data/home" : "/root";
     setenv("HOME", home, 1);
     if (chdir(home) != 0) { /* stay where we are */ }
-    setenv("SHELL", "/bin/sh", 1);
+    setenv("SHELL", "/bin/bash", 1);
     setenv("TERM", "foot", 1);
     setenv("XDG_SESSION_TYPE", "wayland", 1);
     setenv("XDG_CURRENT_DESKTOP", "ccos", 1);

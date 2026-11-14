@@ -68,6 +68,12 @@ ccos is built from these open-source projects:
   Noto Color Emoji        OFL-1.1          https://github.com/googlefonts/noto-emoji
                           (the emoji picker's pictures, emoji.gz, made by emojigen/)
   Unicode emoji-test.txt  Unicode licence  (emoji names and groups)
+  Terminal tools (Ubuntu 24.04 packages, unmodified):
+    bash 5.2 + bash-completion  GPL-3.0      nano 7.2  GPL-3.0      htop 3.3  GPL-2.0
+    curl 8.5 (libcurl)  curl licence (MIT-like)   zip 3.0  Info-ZIP licence
+    7-Zip 23.01 (7zip)  LGPL-2.1 + unRAR restriction    lm-sensors 3.6  GPL-2.0 / LGPL-2.1
+    OpenSSH 9.6 client  BSD               ncurses terminfo  MIT-like
+  Python 3.12 (+ pip 24.0, Tcl/Tk 8.6 for tkinter)  PSF License / MIT / Tcl licence
 
 Everything else (the desktop, apps, splash and sounds) was written for ccos.
 

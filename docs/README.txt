@@ -192,6 +192,23 @@ Apps (start menu):
   Terminal     a real Linux terminal (foot). Type commands like on the plain
                command line, but in a window: several at once, mouse selection,
                copy = Ctrl+Shift+C, paste = Ctrl+Shift+V, scroll with the wheel.
+               Type help for a list of useful commands. The shell is bash:
+               Tab finishes names (Tab Tab shows the choices), Up/Down go through
+               earlier commands (type the start first to narrow them), Ctrl+R
+               searches them; history is kept on the stick. Coloured prompt and
+               ls. Also there: nano (easy text editor), htop (running programs),
+               curl, zip / unzip, 7z (unpacks .7z .rar and more), sensors
+               (temperatures), ssh / scp / sftp (keys kept in D:\.ssh), and
+               Python 3.12 (python3; pip install NAME keeps packages on the
+               stick in D:\.python).
+  Python       write Python programs and run them: colours, line numbers,
+               auto-indent, Tab = 4 spaces, Ctrl+/ comments lines, Ctrl+Z undo,
+               Ctrl+D duplicates a line. F5 (Run) runs it; what it prints shows
+               below, and a box under it answers input(). An error marks its
+               line in red. Examples: Hello, Guess the number, Turtle drawing,
+               a window with a button (tkinter)... Programs that draw windows
+               (turtle, tkinter) open in the "X11 apps" window. Saved in
+               D:\Documents\Python; double-click a .py file to open it here.
   Photos       look at pictures (JPG, PNG, GIF, BMP, SVG...). Left/Right
                arrows or the buttons go through the folder; + / - or the
                mouse wheel zoom, 0 fits it to the window; drag a zoomed
