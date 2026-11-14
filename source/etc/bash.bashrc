@@ -1,14 +1,14 @@
 # ccos: the Terminal's shell (bash)
 [ -z "$PS1" ] && return
 # a coloured prompt:  ccos ~/folder $   (red # instead of $ would mean "root": ccos runs everything as root)
-PS1='\[\e[1;36m\]ccos\[\e[0m\] \[\e[1;34m\]\w\[\e[0m\] \[\e[1;32m\]\$\[\e[0m\] '
+PS1='\[\e[1;36m\]ccos\[\e[0m\] \[\e[1;35m\]${CCOS_USB:+$CCOS_USB }\[\e[0m\]\[\e[1;34m\]\w\[\e[0m\] \[\e[1;32m\]\$\[\e[0m\] '
 PROMPT_DIRTRIM=3
 # history: kept on the stick, shared between Terminals, Ctrl+R searches it
 if mountpoint -q /data 2>/dev/null; then HISTFILE=/data/.bash_history; fi
 HISTSIZE=5000; HISTFILESIZE=20000; HISTCONTROL=ignoredups:erasedups
 set +H   # a ! in what you type stays a ! (no history tricks)
 shopt -s histappend checkwinsize cdspell autocd globstar 2>/dev/null
-PROMPT_COMMAND='history -a'
+PROMPT_COMMAND='history -a; _ccos_usb_check'
 # colours
 alias ls='ls --color=auto' ll='ls -lh --color=auto' la='ls -lah --color=auto' l='ls -CF --color=auto'
 alias grep='grep --color=auto'
@@ -22,9 +22,40 @@ _ccos_mkf() {
     l=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]* *//')
     if [[ $l =~ $re ]]; then /usr/bin/mkf --raw "${BASH_REMATCH[3]}"; else /usr/bin/mkf; fi
 }
+# USB sticks:  lsusb (the list: usb1, usb2...)   cdusb usb1 (go into one)   xusb (leave it)
+lsusb() { if [ $# -gt 0 ]; then [ "$1" = -a ] && shift; command lsusb "$@"; else /usr/bin/ccos-usb list; fi; }
+cdusb() {
+    local r n d name
+    r=$(/usr/bin/ccos-usb find "$1") || return 1
+    IFS=$'\t' read -r n d name <<< "$r"
+    [ -z "$CCOS_USB" ] && CCOS_USB_BACK=$PWD
+    cd "$d" || return 1
+    export CCOS_USB=$n CCOS_USB_DIR=$d CCOS_USB_NAME=$name
+    printf '\e[1;32m✔\e[0m You'"'"'re in %s (%s). Files you make now go on that stick. xusb leaves it.\n' "$n" "$name"
+}
+xusb() {
+    if [ -z "$CCOS_USB" ]; then echo "You're not in a USB stick. (cdusb usb1 goes into one.)"; return 0; fi
+    local n=$CCOS_USB name=$CCOS_USB_NAME
+    sync
+    cd "${CCOS_USB_BACK:-$HOME}" 2>/dev/null || cd ~
+    unset CCOS_USB CCOS_USB_DIR CCOS_USB_NAME CCOS_USB_BACK
+    printf '\e[1;32m✔\e[0m Left %s (%s). Everything is written to it.\n' "$n" "$name"
+}
+# leaving the stick with cd, or pulling it out, ends "being in" it
+_ccos_usb_check() {
+    [ -n "$CCOS_USB" ] || return
+    if [ ! -d "$CCOS_USB_DIR" ] || ! mountpoint -q "$CCOS_USB_DIR" 2>/dev/null; then
+        printf '\e[1;31m✖\e[0m %s was pulled out.\n' "$CCOS_USB"
+        cd "${CCOS_USB_BACK:-$HOME}" 2>/dev/null || cd ~
+        unset CCOS_USB CCOS_USB_DIR CCOS_USB_NAME CCOS_USB_BACK
+    else case "$PWD/" in "$CCOS_USB_DIR"/*) ;; *) unset CCOS_USB CCOS_USB_DIR CCOS_USB_NAME CCOS_USB_BACK ;; esac
+    fi
+}
+_ccos_cdusb_tab() { COMPREPLY=($(compgen -W "$(/usr/bin/ccos-usb names)" -- "${COMP_WORDS[COMP_CWORD]}")); }
 export LS_COLORS='di=1;34:ln=1;36:ex=1;32:*.py=0;33:*.zip=1;31:*.7z=1;31:*.rar=1;31:*.gz=1;31:*.jpg=1;35:*.png=1;35:*.mp4=1;35:*.mp3=0;36:*.pdf=0;31'
 # Tab completion for commands' options (and folders, files...)
 [ -f /usr/share/bash-completion/bash_completion ] && . /usr/share/bash-completion/bash_completion
+complete -F _ccos_cdusb_tab cdusb
 
 help() {
     if [ -n "$1" ]; then builtin help "$@" 2>/dev/null || man "$1" 2>/dev/null || "$1" --help 2>&1 | less -FX; return; fi
@@ -41,12 +72,13 @@ ${b}Files${n}
                     (\\n in the text starts a new line: mkf a.txt : hi \\n there)
   nano FILE         edit a text file (Ctrl+S saves, Ctrl+X quits)
   cat / less FILE   show / read a file (q quits)   find . -name '*.txt'   find files
+  lsusb             your USB sticks (usb1, usb2...)  cdusb usb1   go into one   xusb   leave it
   zip -r a.zip DIR  zip a folder    unzip a.zip    7z x FILE   unpack .7z .rar ...
 
 ${b}System${n}
   htop              running programs, CPU, memory (F9 ends one, q quits)
   sensors           temperatures and fans          df -h     free space
-  free -h           memory          lsusb / lspci  devices   poweroff / reboot
+  free -h           memory       lsusb -a / lspci  devices   poweroff / reboot
 
 ${b}Internet${n}
   ping google.com   is the internet working?       ip a      network addresses

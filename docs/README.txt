@@ -12,6 +12,8 @@ source\make_usbimg.sh  builds ccos-usb.img (the USB stick version)
 source\mkpart.c    makes the stick's second part for your files and apps
 source\kernel.config  the Linux kernel settings ccos is built with
 source\init.sh      /init, the first program the kernel runs (boot steps, [  OK  ] lines)
+source\mkf.sh       the mkf command (make a file the easy way)
+source\ccos-usb.sh  lsusb / cdusb / xusb: USB sticks in the Terminal
 source\splash.c     the shutdown / restart screen
 source\desktop.c    the desktop: taskbar, start menu, windows and all the apps
 source\ccos-shutdown.sh  shutdown / restart / boot-into-shell screen and logic
@@ -481,6 +483,9 @@ Shell commands: poweroff, reboot (show the shutdown screen)
   mkf hi.txt : hello!   makes hi.txt with "hello!" inside (mkf hi.txt = empty file;
                         from the home folder it goes into Documents)
                         \n in the text starts a new line: mkf a.txt : he \n llo
+  lsusb                 your USB sticks, numbered usb1, usb2... (lsusb -a: every USB device)
+  cdusb usb1            go into that stick: mkf, cp, nano... now work on it
+  xusb                  leave the stick again
 Closing the QEMU window = pulling the plug (no shutdown screen)
 
 Adding things to the start menu: edit left_items / right_items near the

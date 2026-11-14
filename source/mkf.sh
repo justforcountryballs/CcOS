@@ -58,6 +58,8 @@ fi || { echo "${R}✖${N} Couldn't make $name here (is this place read-only?).";
 
 where=$parent
 case "$where" in /data) where="D:" ;; /data/*) where="D:/${where#/data/}" ;; esac
+if [ -n "$CCOS_USB_DIR" ]; then case "$parent/" in "$CCOS_USB_DIR"/*)
+    sub=${parent#"$CCOS_USB_DIR"}; where="$CCOS_USB ($CCOS_USB_NAME)${sub:+, folder ${sub#/}}" ;; esac; fi
 if [ -n "$text" ]; then
     echo "${G}✔${N} Made the file ${name##*/} in $where (with your text inside)"
 else
