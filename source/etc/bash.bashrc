@@ -38,6 +38,7 @@ ${b}Files${n}
   cp A B / mv A B   copy / move or rename          rm FILE   delete (no Recycle Bin!)
   mkdir NAME        make a folder                  tree      folders as a tree
   mkf hi.txt        make a file (mkf hi.txt : hello!  puts "hello!" in it)
+                    (\\n in the text starts a new line: mkf a.txt : hi \\n there)
   nano FILE         edit a text file (Ctrl+S saves, Ctrl+X quits)
   cat / less FILE   show / read a file (q quits)   find . -name '*.txt'   find files
   zip -r a.zip DIR  zip a folder    unzip a.zip    7z x FILE   unpack .7z .rar ...

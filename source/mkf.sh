@@ -14,6 +14,7 @@ if [ -z "$line" ] || [ "$line" = "--help" ] || [ "$line" = "-h" ]; then
     echo "mkf makes a file."
     echo "  mkf hi.txt                   makes an empty file called hi.txt"
     echo "  mkf hi.txt : hello claude!   makes hi.txt with \"hello claude!\" inside"
+    echo "  mkf list.txt : milk \\n eggs     \\n starts a new line (milk, then eggs below)"
     exit 0
 fi
 
@@ -44,6 +45,11 @@ if [ -e "$path" ]; then echo "${R}✖${N} There's already a file called $name. T
 parent=$(dirname "$path")
 if [ ! -d "$parent" ]; then mkdir -p "$parent" 2>/dev/null || { echo "${R}✖${N} Couldn't make the folder $parent."; exit 1; }; fi
 
+# \n starts a new line (spaces around it are dropped: "he \n llo" -> "he" / "llo"); \\n is a real \n
+if [ -n "$text" ]; then
+    text=$(printf '%s' "$text" | awk '{ gsub(/\\\\n/, "\001"); gsub(/[ \t]*\\n[ \t]*/, "\n"); gsub(/\001/, "\\n"); printf "%s", $0 }'; printf x)
+    text=${text%x}
+fi
 if [ "$has" = 1 ] && [ -n "$text" ]; then
     printf '%s\n' "$text" > "$path" 2>/dev/null
 else

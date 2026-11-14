@@ -480,6 +480,7 @@ Updates (Settings > Update):
 Shell commands: poweroff, reboot (show the shutdown screen)
   mkf hi.txt : hello!   makes hi.txt with "hello!" inside (mkf hi.txt = empty file;
                         from the home folder it goes into Documents)
+                        \n in the text starts a new line: mkf a.txt : he \n llo
 Closing the QEMU window = pulling the plug (no shutdown screen)
 
 Adding things to the start menu: edit left_items / right_items near the
