@@ -68,3 +68,15 @@ fi
 case "$path" in /data/*|/mnt/*|/media/*) ;; *)
     echo "${Y}!${N} This folder isn't saved on your stick, so the file is gone after a restart. (cd D: first to keep it.)" ;;
 esac
+
+# the usual Linux way of doing the same (hints off turns this off)
+q() { case "$1" in *[!A-Za-z0-9._/+-]*) printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")" ;; *) printf '%s' "$1" ;; esac; }
+case "$path" in "$(pwd)/"*) show=${path#"$(pwd)/"} ;; *) show=$path ;; esac
+f=$(q "$show")
+if [ -z "$text" ]; then /usr/bin/ccos-hint "touch $f"
+else case "$text" in
+    *"
+"*) args=$(printf '%s\n' "$text" | while IFS= read -r l; do printf ' %s' "$(q "$l")"; done)
+        /usr/bin/ccos-hint "printf '%s\\n'$args > $f" ;;
+    *)  /usr/bin/ccos-hint "echo $(q "$text") > $f" ;;
+esac; fi

@@ -7,7 +7,7 @@ ROOT=$1
 T=$(dirname "$0")
 "$T/add_files.sh" "$ROOT" /usr/bin/bash /usr/bin/nano /usr/bin/htop /usr/bin/curl /usr/bin/zip /usr/bin/zipcloak /usr/bin/zipsplit \
     /usr/bin/sensors /usr/bin/ssh /usr/bin/scp /usr/bin/sftp /usr/bin/ssh-keygen /usr/bin/ssh-keyscan /usr/bin/ssh-add /usr/bin/ssh-agent \
-    /usr/bin/python3.12 /usr/lib/7zip/7z
+    /usr/bin/python3.12 /usr/lib/7zip/7z /usr/bin/lsblk
 cp /usr/lib/7zip/7z.so "$ROOT/usr/lib/7zip/"
 "$T/add_files.sh" "$ROOT" /usr/lib/7zip/7z.so
 printf '#! /bin/sh\nexec /usr/lib/7zip/7z "$@"\n' > "$ROOT/usr/bin/7z"; chmod +x "$ROOT/usr/bin/7z"

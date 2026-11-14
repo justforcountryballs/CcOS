@@ -32,6 +32,7 @@ cdusb() {
     cd "$d" || return 1
     export CCOS_USB=$n CCOS_USB_DIR=$d CCOS_USB_NAME=$name
     printf '\e[1;32m✔\e[0m You'"'"'re in %s (%s). Files you make now go on that stick. xusb leaves it.\n' "$n" "$name"
+    /usr/bin/ccos-hint "cd $(printf '%q' "$d")"
 }
 xusb() {
     if [ -z "$CCOS_USB" ]; then echo "You're not in a USB stick. (cdusb usb1 goes into one.)"; return 0; fi
@@ -40,6 +41,17 @@ xusb() {
     cd "${CCOS_USB_BACK:-$HOME}" 2>/dev/null || cd ~
     unset CCOS_USB CCOS_USB_DIR CCOS_USB_NAME CCOS_USB_BACK
     printf '\e[1;32m✔\e[0m Left %s (%s). Everything is written to it.\n' "$n" "$name"
+    /usr/bin/ccos-hint "sync, then cd somewhere else"
+}
+# hints: the grey "(the usual Linux way: ...)" lines under the easy commands
+hints() {
+    local f=/tmp/.ccos-hints-off; [ -d /data ] && mountpoint -q /data 2>/dev/null && f=/data/.ccos-hints-off
+    case "$1" in
+        off) : > "$f"; echo "Hints are off. (hints on brings them back)" ;;
+        on)  rm -f /data/.ccos-hints-off /tmp/.ccos-hints-off; echo "Hints are on: easy commands also show the usual Linux way." ;;
+        *)   if [ -e /data/.ccos-hints-off ] || [ -e /tmp/.ccos-hints-off ]; then echo "Hints are off. Type hints on to turn them on."
+             else echo "Hints are on. Type hints off to turn them off."; fi ;;
+    esac
 }
 # leaving the stick with cd, or pulling it out, ends "being in" it
 _ccos_usb_check() {
@@ -73,6 +85,7 @@ ${b}Files${n}
   nano FILE         edit a text file (Ctrl+S saves, Ctrl+X quits)
   cat / less FILE   show / read a file (q quits)   find . -name '*.txt'   find files
   lsusb             your USB sticks (usb1, usb2...)  cdusb usb1   go into one   xusb   leave it
+  hints off / on    the grey "usual Linux way" lines under mkf, lsusb, cdusb, xusb
   zip -r a.zip DIR  zip a folder    unzip a.zip    7z x FILE   unpack .7z .rar ...
 
 ${b}System${n}

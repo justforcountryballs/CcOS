@@ -14,6 +14,7 @@ source\kernel.config  the Linux kernel settings ccos is built with
 source\init.sh      /init, the first program the kernel runs (boot steps, [  OK  ] lines)
 source\mkf.sh       the mkf command (make a file the easy way)
 source\ccos-usb.sh  lsusb / cdusb / xusb: USB sticks in the Terminal
+source\ccos-hint.sh the "usual Linux way" hints (hints off / on)
 source\splash.c     the shutdown / restart screen
 source\desktop.c    the desktop: taskbar, start menu, windows and all the apps
 source\ccos-shutdown.sh  shutdown / restart / boot-into-shell screen and logic
@@ -486,6 +487,8 @@ Shell commands: poweroff, reboot (show the shutdown screen)
   lsusb                 your USB sticks, numbered usb1, usb2... (lsusb -a: every USB device)
   cdusb usb1            go into that stick: mkf, cp, nano... now work on it
   xusb                  leave the stick again
+  hints off / hints on  the grey "(the usual Linux way: ...)" line these easy
+                        commands print, so you learn the real commands too
 Closing the QEMU window = pulling the plug (no shutdown screen)
 
 Adding things to the start menu: edit left_items / right_items near the

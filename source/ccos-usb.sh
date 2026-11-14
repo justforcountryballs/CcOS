@@ -68,6 +68,7 @@ list)
         printf "  ${C}usb%s${N}  %-20s %s free of %s%s%s\n" "$n" "$name" "$(human $fr)" "$(human $tot)" "$ro" "$here"
     done
     echo "${D}Type cdusb usb1 to go into one, xusb to leave it. (lsusb -a lists every USB device.)${N}"
+    /usr/bin/ccos-hint "lsblk, or ls /media"
     ;;
 find)
     mount_new
